@@ -78,10 +78,17 @@ export the **same** `WORK_ROOT` in every new shell and submission environment.
 Default when unset: the `refwave-assets/` sibling of this repository.
 
 The downloader fetches released [LocateAnything-3B](https://huggingface.co/nvidia/LocateAnything-3B)
-and the `refwave_v1/` records in
+and the [published `refwave_v1/` records](https://huggingface.co/datasets/shubhampatle/Pixel-PIVR-Magnified-v2/tree/main/refwave_v1) in
 [Pixel-PIVR-Magnified-v2](https://huggingface.co/datasets/shubhampatle/Pixel-PIVR-Magnified-v2),
 at pinned revisions.
 The historical dataset name does not mean this is a magnified-crop experiment.
+**Use `refwave_v1/stage1.jsonl`, `stage2.jsonl`, and `validation.jsonl`, not the
+older expanded records under `annotations/` or recipes under `recipes/`.**
+These files contain 116,514, 39,918, and 747 episodes respectively, with both
+rounds stored in each episode. The default download is pinned to dataset commit
+`6ff53cc0ef2a97b04770d9110f8b6d79e9bad6d7`; its annotation hashes match the local
+full-scale training records. This commit updates the guides, not the images or
+training targets.
 Existing train/validation image archives are reused, and downloads are resumable.
 No Hugging Face login is needed for public downloads. Run this step on an
 internet-enabled machine before requesting offline compute nodes.
@@ -89,6 +96,23 @@ internet-enabled machine before requesting offline compute nodes.
 Existing assets can be reused with `MODEL_DIR` and `DATA_ROOT`; the latter must
 contain `refwave_v1/` and `images/`. No dataset audit is run by the launcher.
 You do not need to download, rename or move the individual files manually.
+If the original dataset images are **already extracted**, download only the
+RefWave records (about 1.29 GB) into that existing dataset directory:
+
+```bash
+export DATA_ROOT=/path/to/existing/dataset
+hf download shubhampatle/Pixel-PIVR-Magnified-v2 \
+  --repo-type dataset \
+  --revision 6ff53cc0ef2a97b04770d9110f8b6d79e9bad6d7 \
+  --include "refwave_v1/*" --local-dir "$DATA_ROOT"
+```
+
+Keep `DATA_ROOT` exported for training/evaluation. It must contain **both**
+`images/` and `refwave_v1/`; do not set it to the `refwave_v1/` subfolder itself.
+Set `MODEL_DIR` to existing base LA weights if they are outside the default
+`$WORK_ROOT/LocateAnything-3B/`. This records-only command does not fetch weights
+or extract images. On a new machine, use `bash download.sh` instead.
+
 Reserve roughly 250 GiB for LoRA or 450 GiB for full fine-tuning, including
 archives, extracted images, environment, model and checkpoints. Storage estimates
 are not GPU-memory estimates. Full fine-tuning also needs substantially more

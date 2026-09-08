@@ -11,7 +11,7 @@ from huggingface_hub import snapshot_download
 
 MODEL_REVISION = "c32291ca5e996f5a7a485845b4f57a233936bba0"
 DATA_REPO = "shubhampatle/Pixel-PIVR-Magnified-v2"
-DATA_REVISION = "0ece8e8145324265f5c6287fcca6aba75b050c22"
+DATA_REVISION = "6ff53cc0ef2a97b04770d9110f8b6d79e9bad6d7"
 
 
 def extract_archive(path, root):
