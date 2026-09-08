@@ -22,6 +22,7 @@ from .runtime import (
     distributed_context,
     synchronize_trainable_parameters,
     truncate_curve,
+    StopRequest,
 )
 from .data import ClusterDataset
 
@@ -265,10 +266,12 @@ def run(args):
 
     scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, factor)
     (cursor, step, best_loss) = (0, 0, math.inf)
+    resume_validation = None
     if saved:
         optimizer.load_state_dict(saved["optimizer"])
         scheduler.load_state_dict(saved["scheduler"])
         (cursor, step, best_loss) = (saved["cursor"], saved["step"], saved["best_loss"])
+        resume_validation = saved.get("validation")
         if not 0 <= step <= total_steps or cursor != min(step * per_gpu * world, len(train)):
             raise ValueError("Checkpoint cursor does not match its completed optimizer updates")
         rng = saved["rng"][rank]
@@ -278,25 +281,18 @@ def run(args):
         torch.cuda.set_rng_state(rng["cuda"])
         if rank == 0:
             truncate_curve(output / "training_curve.jsonl", "step", step)
-            truncate_curve(output / "validation_curve.jsonl", "step", step)
+            truncate_curve(
+                output / "validation_curve.jsonl", "step",
+                step if resume_validation is not None else step - 1,
+            )
+            if (
+                resume_validation is not None
+                and resume_validation["detection_grounding_macro_loss"] == best_loss
+            ):
+                update_symlink(output / "best.pt", checkpoint_path.resolve())
         del saved
-    if cursor == len(train):
-        if rank == 0:
-            atomic_json(output / "done.json", dict(steps=step, records=cursor, epochs=1))
-        if world > 1:
-            dist.destroy_process_group()
-        return
-    indices = []
-    for start in range(cursor, len(train), per_gpu * world):
-        (selected, _) = update_indices(order, start, per_gpu, world, rank)
-        indices.extend(selected)
-    loader = iter(make_loader(train, indices, args.workers))
     interrupted = False
-
-    def stop(_signum, _frame):
-        nonlocal interrupted
-        interrupted = True
-
+    stop = StopRequest()
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     wandb_run = None
@@ -313,6 +309,72 @@ def run(args):
             mode=args.wandb_mode,
             config=contract,
         )
+
+    def save_checkpoint(validation):
+        nonlocal best_loss
+        improved = (
+            validation is not None and validation["detection_grounding_macro_loss"] < best_loss
+        )
+        if improved:
+            best_loss = validation["detection_grounding_macro_loss"]
+        rng = dict(
+            cpu=torch.get_rng_state(), cuda=torch.cuda.get_rng_state(),
+            python=random.getstate(), numpy=np.random.get_state(),
+        )
+        states = [None] * world
+        if world > 1:
+            dist.all_gather_object(states, rng)
+        else:
+            states[0] = rng
+        if args.tuning == "full" and world > 1:
+            optimizer.consolidate_state_dict(to=0)
+        if rank == 0:
+            path = output / f"checkpoint-{step:07d}.pt"
+            atomic_torch_save(
+                path,
+                dict(
+                    schema=SCHEMA, config=contract, step=step, cursor=cursor,
+                    best_loss=best_loss, validation=validation,
+                    trainable_state=trainable_state(model), optimizer=optimizer.state_dict(),
+                    scheduler=scheduler.state_dict(), rng=states,
+                ),
+            )
+            update_symlink(output / "last.pt", path)
+            if improved:
+                update_symlink(output / "best.pt", path)
+            keep = {p.resolve() for p in (output / "last.pt", output / "best.pt") if p.exists()}
+            for old in output.glob("checkpoint-*.pt"):
+                if old.resolve() not in keep:
+                    old.unlink()
+        if world > 1:
+            dist.barrier()
+
+    def run_validation():
+        validation = validate(wrapper, val, args, rank, world)
+        if rank == 0:
+            append_jsonl(output / "validation_curve.jsonl", dict(step=step, **validation))
+            print(json.dumps(dict(validation_step=step, **validation)), flush=True)
+            if wandb_run:
+                wandb_run.log({"validation/" + k: v for k, v in validation.items()}, step=step)
+        return validation
+
+    if cursor == len(train):
+        # A signal on the last update may have saved weights before validation.
+        if resume_validation is None:
+            save_checkpoint(run_validation())
+        if rank == 0:
+            atomic_json(output / "done.json", dict(steps=step, records=cursor, epochs=1))
+            (output / "interrupted.json").unlink(missing_ok=True)
+        if wandb_run:
+            wandb_run.finish()
+        if world > 1:
+            dist.destroy_process_group()
+        return
+    indices = []
+    for start in range(cursor, len(train), per_gpu * world):
+        (selected, _) = update_indices(order, start, per_gpu, world, rank)
+        indices.extend(selected)
+    loader = iter(make_loader(train, indices, args.workers))
     wrapper.train()
     started = time.time()
     while cursor < len(train):
@@ -328,6 +390,7 @@ def run(args):
         norm = float(torch.nn.utils.clip_grad_norm_(trainable, 1.0))
         if not math.isfinite(norm):
             raise FloatingPointError("Non-finite gradient norm")
+        used_rates = [group["lr"] for group in optimizer.param_groups]
         optimizer.step()
         scheduler.step()
         (cursor, step) = (end, step + 1)
@@ -336,8 +399,8 @@ def run(args):
             records_seen=cursor,
             elapsed_seconds=time.time() - started,
             gradient_norm=norm,
-            learning_rate=scheduler.get_last_lr()[0],
-            head_lr=scheduler.get_last_lr()[1],
+            learning_rate=used_rates[0],
+            head_lr=used_rates[1],
             peak_gpu_gib=torch.cuda.max_memory_allocated() / 1024**3,
             **metrics(rows, device, world),
         )
@@ -347,65 +410,13 @@ def run(args):
                 print(json.dumps(row), flush=True)
             if wandb_run:
                 wandb_run.log({"train/" + k: v for (k, v) in row.items()}, step=step)
-        flag = torch.tensor(int(interrupted), device=device)
-        if world > 1:
-            dist.all_reduce(flag, op=dist.ReduceOp.MAX)
-        interrupted = bool(flag.item())
+        interrupted = stop.synchronize(device, world)
         validation = None
         if not interrupted and (step % args.eval_steps == 0 or cursor == len(train)):
-            validation = validate(wrapper, val, args, rank, world)
-            if rank == 0:
-                append_jsonl(output / "validation_curve.jsonl", dict(step=step, **validation))
-                print(json.dumps(dict(validation_step=step, **validation)), flush=True)
-                if wandb_run:
-                    wandb_run.log(
-                        {"validation/" + k: v for (k, v) in validation.items()}, step=step
-                    )
+            validation = run_validation()
+        interrupted = stop.synchronize(device, world)
         if validation is not None or interrupted or step % args.save_steps == 0:
-            improved = (
-                validation is not None and validation["detection_grounding_macro_loss"] < best_loss
-            )
-            if improved:
-                best_loss = validation["detection_grounding_macro_loss"]
-            rng = dict(
-                cpu=torch.get_rng_state(),
-                cuda=torch.cuda.get_rng_state(),
-                python=random.getstate(),
-                numpy=np.random.get_state(),
-            )
-            states = [None] * world
-            if world > 1:
-                dist.all_gather_object(states, rng)
-            else:
-                states[0] = rng
-            if args.tuning == "full" and world > 1:
-                optimizer.consolidate_state_dict(to=0)
-            if rank == 0:
-                path = output / f"checkpoint-{step:07d}.pt"
-                atomic_torch_save(
-                    path,
-                    dict(
-                        schema=SCHEMA,
-                        config=contract,
-                        step=step,
-                        cursor=cursor,
-                        best_loss=best_loss,
-                        validation=validation,
-                        trainable_state=trainable_state(model),
-                        optimizer=optimizer.state_dict(),
-                        scheduler=scheduler.state_dict(),
-                        rng=states,
-                    ),
-                )
-                update_symlink(output / "last.pt", path)
-                if improved:
-                    update_symlink(output / "best.pt", path)
-                keep = {p.resolve() for p in (output / "last.pt", output / "best.pt") if p.exists()}
-                for old in output.glob("checkpoint-*.pt"):
-                    if old.resolve() not in keep:
-                        old.unlink()
-            if world > 1:
-                dist.barrier()
+            save_checkpoint(validation)
         if interrupted:
             break
     if rank == 0:
@@ -413,6 +424,8 @@ def run(args):
             output / ("interrupted.json" if interrupted else "done.json"),
             dict(steps=step, records=cursor, total_records=len(train), epochs=cursor / len(train)),
         )
+        if not interrupted:
+            (output / "interrupted.json").unlink(missing_ok=True)
     if wandb_run:
         wandb_run.finish()
     if world > 1:

@@ -2,6 +2,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import warnings
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 import torch
@@ -18,6 +19,33 @@ def append_jsonl(path: Path, value: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         handle.write(json.dumps(dict(value), sort_keys=True) + "\n")
+
+
+def read_jsonl_log(path: Path, *, repair_tail: bool = False) -> list[dict]:
+    """Recover an interrupted append, never a corrupt complete/interior record."""
+    if not path.exists():
+        return []
+    raw = path.read_bytes()
+    lines = raw.splitlines(keepends=True)
+    rows, offset = [], 0
+    repaired = raw
+    for index, line in enumerate(lines):
+        if line.strip():
+            try:
+                rows.append(json.loads(line))
+            except (ValueError, UnicodeDecodeError) as error:
+                if not (repair_tail and index == len(lines) - 1 and not line.endswith(b"\n")):
+                    raise ValueError(f"Corrupt JSONL log {path}, line {index + 1}") from error
+                repaired = raw[:offset]
+                warnings.warn(f"Discarding unfinished final log entry in {path}", RuntimeWarning)
+        offset += len(line)
+    if repair_tail and repaired and not repaired.endswith(b"\n"):
+        repaired += b"\n"
+    if repair_tail and repaired != raw:
+        temporary = path.with_name(f".{path.name}.repair-{os.getpid()}")
+        temporary.write_bytes(repaired)
+        os.replace(temporary, path)
+    return rows
 
 
 def atomic_torch_save(path: Path, value: Mapping[str, Any]) -> None:

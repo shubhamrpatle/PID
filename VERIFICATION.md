@@ -6,10 +6,21 @@ training smoke test.
 
 ## Completed
 
-- **92 tests passed, 2 warnings, 126.15 seconds**, in a newly created virtual
+- Initial review: **92 tests passed, 2 warnings, 137.66 seconds**, in a clean virtual
   environment, with public-model decoding, export, upstream source and
   representative-record checks enabled. CUDA was hidden for every test; no
   existing GPU workload was interrupted.
+- Final review: **104 tests passed, 3 warnings, 129.99 seconds**, using the same
+  environment and pinned public-model code. Two warnings come from upstream LA/
+  Transformers; the third is the expected unfinished-log recovery warning in its
+  regression test. See the review findings below for the added regression scope.
+- Built the final package wheel with no extra dependencies and imported training,
+  evaluation and export from a separate `/tmp` installation in isolated Python.
+  Imports of legacy Pixel-PIVR, Eagle, DeepSpeed and Liger were blocked. The first
+  probe incorrectly treated Transformers' optional-package availability lookup
+  as an import; the corrected probe reports those packages unavailable while
+  still rejecting real imports, and passed. The wheel is a maintainer check,
+  not a replacement for the README's Git clone/setup workflow.
 - Python 3.10.12, torch 2.5.1+cu121, torchvision 0.20.1+cu121,
   transformers 4.57.1 and peft 0.12.0. All pinned direct dependencies match the
   installed versions in the test environment. Installation followed the README:
@@ -76,6 +87,43 @@ training smoke test.
 - Cross-round Qwen KV reuse. Projected vision is reused across rounds; Qwen
   prefixes are shared within each round and rebuilt between rounds.
 
-The code is prepared as a local Git repository. It has not been pushed to GitHub.
-Original datasets, checkpoints, running jobs and the Pixel-PIVR checkout were
-left unchanged by this standalone release work.
+## Final Code Review Findings
+
+The review began from local commit `9a9d237`. The following fixes are local
+changes for the user to publish, not changes to any existing training run:
+
+- **Multi-rank stop alignment:** the old signal handler could change the local
+  exit decision during validation/checkpointing, after ranks had synchronized.
+  The handler now only records a request. Stop decisions are synchronized before
+  and after validation. A two-process CPU distributed test verifies that a
+  request on one rank reaches both ranks. This does not test NCCL on A100.
+- **Final-update completion:** reproduced a final-step interrupt followed by a
+  resume that wrote `done.json` without performing final validation or creating
+  `best.pt`. Resume now completes pending validation without another optimizer
+  update. It also recovers a missing/stale best pointer when the last checkpoint
+  records the best loss, and removes validation entries that were never committed
+  to a checkpoint.
+- **Torn log recovery:** reproduced a JSON parsing error when an interrupted
+  final append existed despite a valid checkpoint. Training and evaluation now
+  recover only an unfinished final entry, with a warning, and reject corruption
+  in completed/interior entries. An already complete final JSON entry lacking a
+  newline is retained and separated from the next append. Dataset files are not
+  repaired or modified by this logic.
+- **RNG isolation:** branch initialization previously called `torch.manual_seed`,
+  which also reseeds CUDA generators before their state was captured. Branches
+  now initialize private CPU/device generators. The direct-generation control
+  uses the same scoped RNG helper. DataLoader startup also uses its own generator
+  rather than advancing the training RNG on restart or validation.
+- **Learning-rate plots:** the old row logged the scheduler's next rate after
+  an optimizer update. Rows now log the rates actually used by that update.
+  The learning-rate schedule itself and the loss objective were not changed.
+
+Tests exercise the real training loop with a tiny CPU stand-in, actual checkpoint
+files, interrupted/resumed execution, final validation, best-pointer recovery,
+log repair and learning-rate logging. Model/gradient/decoding checks above remain
+separate from those control-flow tests. No dataset, architecture, optimizer
+hyperparameter or target format was changed by these fixes. No test or audit was
+added to setup/download/train/evaluation launchers.
+
+The assistant has not pushed these review changes to GitHub. Original datasets,
+checkpoints, running jobs and the Pixel-PIVR checkout were left unchanged.

@@ -1,5 +1,6 @@
 from types import SimpleNamespace
 from pathlib import Path
+import os
 import pytest
 import torch
 from refwave.class_wave import ClassPointBranch, _BranchRNG
@@ -144,12 +145,9 @@ def test_ar_sampler_preserves_native_token_and_stop_rule(token, kind):
 def test_actual_la_qwen_hybrid_cache_matches_full_history_logits():
     from transformers.dynamic_module_utils import get_class_from_dynamic_module
 
-    checkpoint = (
-        Path(__file__).resolve().parents[2]
-        / "Zero_shot_ anlysis_LA/model/LocateAnything-3B/checkpoint"
-    )
-    if not checkpoint.is_dir():
-        pytest.skip("Optional integration test requires local released LA code")
+    if not os.getenv("LA_TEST_MODEL"):
+        pytest.skip("Optional integration test requires LA_TEST_MODEL")
+    checkpoint = Path(os.environ["LA_TEST_MODEL"])
     config_type = get_class_from_dynamic_module("configuration_qwen2.Qwen2Config", str(checkpoint))
     model_type = get_class_from_dynamic_module("modeling_qwen2.Qwen2Model", str(checkpoint))
     torch.manual_seed(19)

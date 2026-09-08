@@ -5,6 +5,23 @@ import os
 from pathlib import Path
 import torch
 import torch.distributed as dist
+from .io import read_jsonl_log
+
+
+class StopRequest:
+    """Signal handlers only set a flag; all ranks decide at the same boundary."""
+
+    def __init__(self):
+        self.requested = False
+
+    def __call__(self, _signum, _frame):
+        self.requested = True
+
+    def synchronize(self, device, world_size):
+        flag = torch.tensor(int(self.requested), device=device)
+        if world_size > 1:
+            dist.all_reduce(flag, op=dist.ReduceOp.MAX)
+        return bool(flag.item())
 
 
 def choose_vision_attention(requested):
@@ -46,7 +63,7 @@ def synchronize_trainable_parameters(module, world_size):
 def truncate_curve(path: Path, step_key, maximum_step):
     if not path.is_file():
         return
-    rows = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+    rows = read_jsonl_log(path, repair_tail=True)
     temporary = path.with_name(f".{path.name}.resume-{os.getpid()}")
     temporary.write_text(
         "".join(json.dumps(row) + "\n" for row in rows if row[step_key] <= maximum_step)

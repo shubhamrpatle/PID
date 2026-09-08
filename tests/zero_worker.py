@@ -6,6 +6,7 @@ import sys
 import torch
 import torch.distributed as dist
 from torch.distributed.optim import ZeroRedundancyOptimizer
+from refwave.runtime import StopRequest
 
 dist.init_process_group("gloo")
 rank = dist.get_rank()
@@ -30,4 +31,10 @@ for p in model.parameters():
     for v in values:
         torch.testing.assert_close(v, p)
 assert len(optimizer.optim.state) > 0
+stop = StopRequest()
+assert not stop.synchronize(torch.device("cpu"), dist.get_world_size())
+if rank == 1:
+    stop(15, None)
+assert stop.synchronize(torch.device("cpu"), dist.get_world_size())
+assert stop.synchronize(torch.device("cpu"), dist.get_world_size())
 dist.destroy_process_group()

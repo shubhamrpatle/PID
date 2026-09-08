@@ -18,7 +18,7 @@ from .hybrid_class_wave import CachedHybridClassWaveDecoder
 from .decoder import AddressedCrop, GeometryDecoder
 from .episode import IndexedJsonl, box_text
 from .geometry import canonical_label, detection_counts, precision_recall_f1, hbox_iou
-from .io import atomic_json, append_jsonl, sha256_file
+from .io import atomic_json, append_jsonl, read_jsonl_log, sha256_file
 from .model import configure_lora_head, configure_full
 from .runtime import distributed_context
 from .train import SCHEMA, load_base, restore
@@ -307,10 +307,7 @@ def main():
     if rank == 0:
         atomic_json(config, contract)
     shard = args.output / f"predictions.rank{rank}.jsonl"
-    done = set()
-    if shard.exists():
-        for line in shard.read_text().splitlines():
-            done.add(json.loads(line)["index"])
+    done = {row["index"] for row in read_jsonl_log(shard, repair_tail=True)}
     evaluator = Evaluator(model, processor, args, device)
     for index in range(rank, count, world):
         if index in done:
@@ -352,10 +349,10 @@ def main():
         dist.barrier()
     if rank == 0:
         results = [
-            json.loads(line)
+            row
             for r in range(world)
             if (args.output / f"predictions.rank{r}.jsonl").exists()
-            for line in (args.output / f"predictions.rank{r}.jsonl").read_text().splitlines()
+            for row in read_jsonl_log(args.output / f"predictions.rank{r}.jsonl")
         ]
         if sorted(r["index"] for r in results) != list(range(count)):
             raise RuntimeError("Evaluation output is incomplete or duplicated")

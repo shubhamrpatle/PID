@@ -94,16 +94,10 @@ class _BranchRNG:
 
     def __init__(self, seed: int, device: torch.device) -> None:
         self.device = device
-        cpu_before = torch.random.get_rng_state()
-        torch.manual_seed(int(seed))
-        self.cpu_state = torch.random.get_rng_state()
-        torch.random.set_rng_state(cpu_before)
+        self.cpu_state = torch.Generator(device="cpu").manual_seed(int(seed)).get_state()
         self.cuda_state: torch.Tensor | None = None
         if device.type == "cuda":
-            cuda_before = torch.cuda.get_rng_state(device)
-            torch.cuda.manual_seed(int(seed))
-            self.cuda_state = torch.cuda.get_rng_state(device)
-            torch.cuda.set_rng_state(cuda_before, device)
+            self.cuda_state = torch.Generator(device=device).manual_seed(int(seed)).get_state()
 
     def call(self, callback: Callable[[], Any]) -> Any:
         cpu_before = torch.random.get_rng_state()
@@ -310,12 +304,7 @@ class ClassAddressedPointWaveDecoder:
         only those branches with the already projected global image. This keeps
         exact baseline behavior and records the extra Qwen prefill explicitly.
         """
-        cpu_before = torch.random.get_rng_state()
-        cuda_before = torch.cuda.get_rng_state(self.device) if self.device.type == "cuda" else None
-        torch.manual_seed(int(branch.seed))
-        if self.device.type == "cuda":
-            torch.cuda.manual_seed(int(branch.seed))
-        try:
+        def generate():
             ids = torch.as_tensor(full_prompt_ids, dtype=torch.long, device=self.device).unsqueeze(
                 0
             )
@@ -338,10 +327,8 @@ class ClassAddressedPointWaveDecoder:
                 return_debug_info=False,
             )
             return str(response[0] if isinstance(response, tuple) else response)
-        finally:
-            torch.random.set_rng_state(cpu_before)
-            if cuda_before is not None:
-                torch.cuda.set_rng_state(cuda_before, self.device)
+
+        return _BranchRNG(branch.seed, self.device).call(generate)
 
     def _close_truncated_answer(self, answer: str, fallback_reason: str | None) -> tuple[str, bool]:
         """Close a max-length answer after its last complete geometry block.

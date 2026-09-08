@@ -233,6 +233,12 @@ SIGKILL/power loss can lose work since the previous save. Full fine-tuning retai
 visual gradients from all waves before one vision backward, with checkpoint
 recomputation; it is not the frozen-vision LoRA code with a changed flag alone.
 
+Resume repairs only an unfinished final entry in a training log or prediction
+shard, with a warning; corruption in a completed entry is an error. If an
+interrupt saved the final update before validation, re-running the same command
+finishes validation and best-checkpoint selection before marking the stage done.
+Loss-curve learning rates are the rates used for that update, not the next update.
+
 ### W&B (Optional)
 
 ```bash
