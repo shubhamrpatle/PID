@@ -1,0 +1,81 @@
+# Verification Scope
+
+Checked on 2026-09-08. These are developer checks, not steps that a cluster user
+must run. No user-facing launcher invokes pytest, an audit, a manifest scan or a
+training smoke test.
+
+## Completed
+
+- **92 tests passed, 2 warnings, 126.15 seconds**, in a newly created virtual
+  environment, with public-model decoding, export, upstream source and
+  representative-record checks enabled. CUDA was hidden for every test; no
+  existing GPU workload was interrupted.
+- Python 3.10.12, torch 2.5.1+cu121, torchvision 0.20.1+cu121,
+  transformers 4.57.1 and peft 0.12.0. All pinned direct dependencies match the
+  installed versions in the test environment. Installation followed the README:
+  CUDA-12.1 PyTorch wheels, `requirements.txt`, then `pip install --no-deps -e .`.
+  Pytest was installed separately for these developer tests only.
+- `pip check` reported the upstream Decord 0.6.0 wheel's platform-metadata warning
+  and no dependency-version conflicts. Its wheel file declares a CPython-3.6 tag
+  despite its Python-3 wheel filename. Decord imports and all image-only checks
+  passed on Python 3.10. This warning is documented in README.md and is not a
+  launcher prerequisite; package metadata was not modified to conceal it.
+- Shell syntax passed for every `.sh` file. Launcher tests cover 1, 2, 4 and 8
+  processes, LoRA/full modes, paths with spaces, independent evaluation GPU count,
+  `DATA_ROOT` overrides and stopping the pipeline after failed Stage 1.
+- Fresh subprocess imports of training, evaluation and export succeed while
+  legacy Pixel-PIVR, Eagle, DeepSpeed and Liger imports are explicitly blocked.
+- The vendored native MTP target-label method matches the AST of Eagle commit
+  `8442db3b79f7fd2357e468e6eecdd9b6a82049ff`. Nine message-format cases also match
+  that upstream image/text message construction.
+- Twenty-eight representative compilations across both stages and both methods
+  match previously measured image-token, wave, sequence and branch counts. These
+  include the 1,942-target dense record. This is not a fresh audit of every record.
+- Exact distributed episode coverage, final partial-batch normalization, padded
+  wave loss/gradients and route balancing pass unit tests.
+- Actual LA Qwen code, with a small CPU configuration, passes shared-prefix
+  class-wave and geometry-wave equivalence checks. This verifies masks/cache
+  behavior, not a GPU-generated benchmark-score equivalence result.
+- Full-model CPU wrapper backward reaches vision, projector, Qwen and output
+  head through the per-episode visual-gradient bridge. Two CPU distributed ranks
+  pass native ZeRO optimizer consolidation and checkpoint restoration tests.
+- The actual released 3B model passes LoRA plus modified LM-head checkpoint
+  export/reload: the head change survives and adapters are merged in the export.
+- Fresh model Python/configuration/tokenizer files were downloaded from LA
+  revision `c32291ca5e996f5a7a485845b4f57a233936bba0`. Both reused local weight
+  shards match the SHA256 values published by Hugging Face. These checks do not
+  rely on the locally patched research model code.
+- The real 3B model completes native direct decoding, a two-class point wave
+  and two-address geometry decoding on a synthetic image, with one shared vision
+  encoding. This CPU-only API smoke test uses FP32 because the local AVX2 CPU
+  lacks native BF16 arithmetic. The GPU recipe remains BF16. Synthetic addresses
+  exercise execution only; they provide no evidence of localization accuracy.
+- The decoding smoke test caught and fixed result serialization: box-only mode
+  now returns only `<box>...</box>` or `<box>None</box>`. The input class stays in
+  the separate `label` field instead of being prepended to the saved answer.
+  Four regression cases cover present/absent targets and both prefix modes.
+- Evaluation query extraction does not depend on stored GT coordinates or
+  answers. Duplicate predictions are counted as false positives in scorer tests;
+  pooled metrics are recomputed from counts.
+- Hugging Face's pinned data revision is reachable and lists the three record
+  files, 17 training-image archives and one validation-image archive. Its manifest
+  reports 116,514 Stage-1, 39,918 Stage-2 and 747 validation episodes. The pinned
+  base-model revision is also reachable. Archives were not downloaded again.
+
+## Not Verified Here
+
+- Installation on the destination cluster, or creation of a Conda environment.
+  A fresh Python-3.10 venv installation was completed on the local Linux host.
+- A100 GPU execution, NCCL behavior on that cluster, peak GPU memory, throughput
+  or an end-to-end full-parameter training run. CPU full-gradient tests cannot
+  establish that an arbitrary device allocation fits.
+- Newly generated validation or benchmark scores from this standalone package.
+  Its default generated evaluation is the 747-query validation set, not the
+  historical Balanced-100 set or a full official benchmark.
+- Multi-node training. The supported scope is one allocated node with 1-8 GPUs.
+- Cross-round Qwen KV reuse. Projected vision is reused across rounds; Qwen
+  prefixes are shared within each round and rebuilt between rounds.
+
+The code is prepared as a local Git repository. It has not been pushed to GitHub.
+Original datasets, checkpoints, running jobs and the Pixel-PIVR checkout were
+left unchanged by this standalone release work.

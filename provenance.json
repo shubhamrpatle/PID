@@ -1,0 +1,18 @@
+{
+  "src/pixel_pivr/cluster_train.py": "a71fc7ab4400a594a6b3f25011b25a9f9c36cd87ad489da2350bf2e3c8612776",
+  "src/pixel_pivr/cluster_modeling.py": "c1b4f128b3ba02769b58a4c95edd89d45391f55e488b7eb5b83534d7b01a0437",
+  "src/pixel_pivr/cluster_data.py": "a2af3047f6475ef3d79fa32002c2a402e52e5d7a4b079324fbafef341af94a20",
+  "src/pixel_pivr/cluster_export.py": "3901bc2c554ca26bdfb023b6b331c91ea9634ecd3ebaede7cc400f380a1a5af8",
+  "src/pixel_pivr/unified_episode.py": "6b343aaab5a029a93fe2b076417e4d6e90a37e6f981a97333779878ce64d74b9",
+  "src/pixel_pivr/unified_modeling.py": "365398c64f0ff0e571c61b4070fa73dde58add33cd89601b813e4d3d8fd7af55",
+  "src/pixel_pivr/lora.py": "2f8d888d440a9ab8df9219962c507bbf8ad40557bb0b8ad4eb0ee328ad36b359",
+  "src/pixel_pivr/io.py": "a43debb930fda86a398e4ecafeac931e8ea72293ef1b06124b748ad4492d2557",
+  "src/pixel_pivr/attention.py": "4dd09196bc57feede2c35f63899e4e7c401d66440ef5cabcb0866d56f44ceb5b",
+  "Eagle@8442db3b79f7fd2357e468e6eecdd9b6a82049ff/Embodied/eaglevl/train/locany_finetune_magi_stream.py": "15991afd4a1786235186f0ca81fd07bb3da764f9462a819b229a3344c66518b0",
+  "Eagle@8442db3b79f7fd2357e468e6eecdd9b6a82049ff/LICENSE": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+  "src/pixel_pivr/shared_prefix.py": "8cf3f824597ae833c33ec53ec9f19b9c1b20c26503280208b581012411481b90",
+  "src/pixel_pivr/class_wave.py": "da07b2455404032739e3169b4c10adcd63156b7e7761de0cd90e82543582ef84",
+  "src/pixel_pivr/hybrid_class_wave.py": "d837c1ec3e75cbc96ad7eb2b84a89da5447b3ca11ce8b030ee85e999afd7b372",
+  "src/pixel_pivr/decoder.py": "2f05933dd50d3053772d9ec82bcffd3efb2595a8a0f3d18de1326a72c71f983d",
+  "src/pixel_pivr/geometry.py": "10e4f44246dcd7da1423eb34aa42c8f4824cd68f143212a548e1d871763e669b"
+}
