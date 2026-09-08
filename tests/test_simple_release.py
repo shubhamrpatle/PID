@@ -171,13 +171,15 @@ def fake_python(tmp_path):
         'sys.exit(int(os.environ.get("FAKE_STATUS", 0)))\n'
     )
     binary.chmod(0o755)
-    return dict(
+    env = dict(
         os.environ,
         PYTHON_BIN=str(binary),
         WORK_ROOT=str(tmp_path / "assets with spaces"),
         COMMAND_LOG=str(tmp_path / "commands.jsonl"),
         SLURM_JOB_NUM_NODES="1",
     )
+    env.pop("RUN_ROOT", None)
+    return env
 
 
 @pytest.mark.parametrize("gpus", [1, 2, 4, 8])

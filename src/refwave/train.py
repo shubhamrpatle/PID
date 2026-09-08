@@ -296,19 +296,27 @@ def run(args):
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
     wandb_run = None
+    if rank == 0:
+        print(f"W&B tracking mode: {args.wandb_mode}", flush=True)
     if rank == 0 and args.wandb_mode != "disabled":
         import wandb
 
         run_id = hashlib.sha256(str(output).encode()).hexdigest()[:16]
         wandb_run = wandb.init(
             project=args.wandb_project,
-            name=output.name + "_" + args.method,
+            name=f"{output.parent.name}_{output.name}",
+            group=output.parent.name,
+            job_type=args.stage,
             id=run_id,
             resume="allow",
             dir=str(output),
             mode=args.wandb_mode,
             config=contract,
         )
+        # Training and validation can publish separately at the same optimizer step.
+        wandb_run.define_metric("optimizer_step")
+        wandb_run.define_metric("train/*", step_metric="optimizer_step")
+        wandb_run.define_metric("validation/*", step_metric="optimizer_step")
 
     def save_checkpoint(validation):
         nonlocal best_loss
@@ -355,7 +363,10 @@ def run(args):
             append_jsonl(output / "validation_curve.jsonl", dict(step=step, **validation))
             print(json.dumps(dict(validation_step=step, **validation)), flush=True)
             if wandb_run:
-                wandb_run.log({"validation/" + k: v for k, v in validation.items()}, step=step)
+                wandb_run.log(
+                    {"optimizer_step": step, **{"validation/" + k: v for k, v in validation.items()}},
+                    commit=True,
+                )
         return validation
 
     if cursor == len(train):
@@ -409,7 +420,10 @@ def run(args):
             if step == 1 or step % args.log_steps == 0:
                 print(json.dumps(row), flush=True)
             if wandb_run:
-                wandb_run.log({"train/" + k: v for (k, v) in row.items()}, step=step)
+                wandb_run.log(
+                    {"optimizer_step": step, **{"train/" + k: v for k, v in row.items()}},
+                    commit=True,
+                )
         interrupted = stop.synchronize(device, world)
         validation = None
         if not interrupted and (step % args.eval_steps == 0 or cursor == len(train)):

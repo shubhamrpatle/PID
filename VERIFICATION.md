@@ -87,6 +87,29 @@ training smoke test.
 - Cross-round Qwen KV reuse. Projected vision is reused across rounds; Qwen
   prefixes are shared within each round and rebuilt between rounds.
 
+## GPU-Only Full Training Restored (2026-09-08)
+
+The cluster log reported CUDA OOM inside MoonViT SDPA during the first vision
+backward. Rank 3 reported 78.07 GiB in use on a 79.25-GiB GPU, with a failed
+1.79-GiB allocation. The run used batch one, accumulation four, 6,000 image
+patches and a 32,768-token wave limit. W&B initialization succeeded.
+
+At the user's request, the subsequent CPU-offload memory fix was reverted before
+cluster deployment. Full training again uses GPU FP32 model parameters, BF16
+forwards, native GPU AdamW (ZeRO-1 optimizer-state sharding on multiple GPUs), and
+the original whole-vision checkpointing. The CPU-master optimizer, per-block
+vision patch and optimizer-sidecar format were removed. This restores the earlier
+memory requirements; it is not a fix for the recorded OOM.
+
+Conda interpreter selection, unique run folders, console logs and W&B fixes remain
+in place. Dataset files, loss definitions, token limits and active jobs were not
+changed. No additional launcher verification or dependencies were introduced.
+
+After the revert, the local suite reported **117 passed, 5 skipped and 1 expected
+log-recovery warning in 14.96 seconds**, with CUDA hidden and the actual LA Qwen
+source tests enabled. The skipped tests require optional assets/runtime settings.
+`git diff --check` passed. No GPU training or cluster fit test was performed.
+
 ## Final Code Review Findings
 
 The review began from local commit `9a9d237`. The following fixes are local

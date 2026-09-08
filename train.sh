@@ -5,7 +5,9 @@ GPUS="${1:-8}"
 STAGES="${2:-both}"
 if [[ "$GPUS" == --help ]]; then
   printf '%s\n' 'Usage: bash train.sh [1-8 GPUs] [both|stage1|stage2]' \
-    'Optional: METHOD=standard BATCH_SIZE=4 RUN_ROOT=/absolute/output/path'
+    'Fresh runs create a unique folder automatically.' \
+    'Resume or run Stage 2: RUN_ROOT=/absolute/existing/run/path' \
+    'Optional: METHOD=standard BATCH_SIZE=4'
   exit 0
 fi
 case "$GPUS" in [1-8]) ;; *) printf '%s\n' 'GPU count must be 1-8.' >&2; exit 2;; esac
@@ -21,7 +23,17 @@ fi
 MODEL_DIR="${MODEL_DIR:-$WORK_ROOT/LocateAnything-3B}"
 DATA_ROOT="${DATA_ROOT:-$WORK_ROOT/dataset}"
 LORA_RANK="${LORA_RANK:-32}"
-RUN_ROOT="${RUN_ROOT:-$WORK_ROOT/runs/${METHOD}_${TUNING}}"
+if [[ -z "${RUN_ROOT:-}" ]]; then
+  if [[ "$STAGES" == stage2 ]]; then
+    printf '%s\n' 'Set RUN_ROOT to the existing run containing completed stage1/ before starting Stage 2.' >&2
+    exit 2
+  fi
+  mkdir -p "$WORK_ROOT/runs"
+  RUN_ROOT="$(mktemp -d "$WORK_ROOT/runs/${METHOD}_${TUNING}_${GPUS}gpu_$(date -u +%Y%m%dT%H%M%SZ)_XXXXXX")"
+else
+  mkdir -p "$RUN_ROOT"
+fi
+RUN_ROOT="$(cd "$RUN_ROOT" && pwd)"
 if [[ "$TUNING" == full ]]; then
   BATCH_SIZE="${BATCH_SIZE:-1}"
   GRAD_ACCUM="${GRAD_ACCUM:-4}"
@@ -36,7 +48,7 @@ run_stage() {
   local parent=()
   if [[ "$stage" == stage2 ]]; then
     if [[ ! -f "$RUN_ROOT/stage1/done.json" ]]; then
-      printf '%s\n' "Stage 1 is incomplete in $RUN_ROOT/stage1. Run: bash train.sh $GPUS both" >&2
+      printf '%s\n' "Stage 1 is incomplete in $RUN_ROOT/stage1. Keep RUN_ROOT set to this run and finish Stage 1 first." >&2
       return 1
     fi
     parent=(--init-checkpoint "$RUN_ROOT/stage1/last.pt")
@@ -55,9 +67,17 @@ run_stage() {
     --seed "${SEED:-20260908}" --wandb-project "${WANDB_PROJECT:-refwave-fullscale}" \
     --wandb-mode "${WANDB_MODE:-disabled}" "${parent[@]}"
 }
-if [[ "$STAGES" != stage2 ]]; then
-  run_stage stage1 "${STAGE1_LR:-2e-5}" "${STAGE1_HEAD_LR:-1e-6}"
-fi
-if [[ "$STAGES" != stage1 ]]; then
-  run_stage stage2 "${STAGE2_LR:-1e-5}" "${STAGE2_HEAD_LR:-5e-7}"
-fi
+run_pipeline() {
+  printf '\n=== %s ===\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf 'RUN_ROOT=%s\nCONSOLE_LOG=%s/console.log\n' "$RUN_ROOT" "$RUN_ROOT"
+  printf 'Resume with the same settings: RUN_ROOT=%q METHOD=%q bash %q %q %q\n' \
+    "$RUN_ROOT" "$METHOD" "$ROOT/train_${TUNING}.sh" "$GPUS" "$STAGES"
+  if [[ "$STAGES" != stage2 ]]; then
+    run_stage stage1 "${STAGE1_LR:-2e-5}" "${STAGE1_HEAD_LR:-1e-6}"
+  fi
+  if [[ "$STAGES" != stage1 ]]; then
+    run_stage stage2 "${STAGE2_LR:-1e-5}" "${STAGE2_HEAD_LR:-5e-7}"
+  fi
+}
+# Preserve failures through tee; keep logging during a normal Ctrl+C shutdown.
+run_pipeline 2>&1 | tee -ia "$RUN_ROOT/console.log"

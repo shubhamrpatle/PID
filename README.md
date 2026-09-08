@@ -55,8 +55,10 @@ python -m pip install --no-deps -e .
 export PYTHON_BIN="$(command -v python)"
 ```
 
-For Conda, set `PYTHON_BIN` in each new shell or submission environment after
-activation. The shell launchers otherwise use `RefWave/.venv/bin/python`.
+Activate your environment in each new shell or submission environment. Launchers
+use an explicit `PYTHON_BIN` first, then an active venv or Conda environment, then
+`RefWave/.venv/bin/python` if present, and finally Python on `PATH`. The explicit
+export above also works with older checkouts. Conda users do not need a `.venv/`.
 Dependencies are pinned to the LA model's APIs. Do not replace PyTorch or
 Transformers with arbitrary newer versions in this environment.
 
@@ -134,9 +136,12 @@ refwave-assets/
     images/{train,validation}/...
     archives/...
   runs/
-    refwave_lora/{stage1,stage2}/
-    refwave_full/{stage1,stage2}/
-    standard_lora/{stage1,stage2}/
+    refwave_lora_8gpu_<UTC-timestamp>_<unique>/
+      console.log
+      stage1/
+      stage2/
+    refwave_full_8gpu_<UTC-timestamp>_<unique>/...
+    standard_lora_4gpu_<UTC-timestamp>_<unique>/...
 ```
 
 ## 3. Train on an Allocated GPU Node
@@ -146,6 +151,7 @@ These scripts support **one compute node**, not multi-node training.
 They respect `CUDA_VISIBLE_DEVICES`; they never reserve GPUs or terminate jobs.
 
 ```bash
+unset RUN_ROOT  # Fresh run; do not reuse an earlier exported output path.
 bash train_lora.sh 8 both
 ```
 
@@ -163,11 +169,30 @@ METHOD=standard bash train_lora.sh 8 both
 ```
 
 Do not start all commands simultaneously on the same allocated GPUs.
-Use `stage1` or `stage2` instead of `both` to run a single stage.
-Stage 2 requires completed Stage-1 **last** weights of the same method/tuning
-mode and starts a fresh optimizer. Re-run the identical command to resume.
+With `RUN_ROOT` unset, each invocation creates a new directory under
+`$WORK_ROOT/runs/`, named by method, tuning mode, GPU count, UTC timestamp and a
+unique suffix. Repeated runs on the same GPU count also get separate folders.
+The launcher prints `RUN_ROOT` and the console-log path before training starts.
+Both stages of a `both` invocation stay inside that one run directory.
+
+Terminal output is automatically saved to `<run>/console.log` while still being
+displayed. There is no need to pipe the command through `tee` yourself. Each stage
+also saves `training_curve.jsonl`, `validation_curve.jsonl`, `config.json` and its
+best/last checkpoints. Resuming appends console output instead of replacing it.
+
+To resume, explicitly use the run path printed by the earlier launch:
+
+```bash
+RUN_ROOT="/absolute/path/to/existing/run" bash train_lora.sh 8 both
+```
+
+Use `train_full.sh` for a full-parameter run and retain `METHOD=standard` for the
+direct-box control. Use `stage1` or `stage2` instead of `both` to run one stage.
+Starting `stage2` alone requires an explicit `RUN_ROOT` containing completed
+Stage-1 **last** weights of the same method/tuning mode; its optimizer starts fresh.
 Keep world size, source records, seed, batch and optimization settings unchanged
-for exact resume. New settings require a new `RUN_ROOT`.
+for exact resume. An explicit `RUN_ROOT` opts into reuse of that directory;
+unset it again before starting another fresh experiment.
 
 | Setting | LoRA | Full fine-tuning |
 |---|---|---|
@@ -191,12 +216,16 @@ There is no silent target truncation and no 180-box cap.
 are explicit environment overrides. For a new memory-constrained LoRA run:
 
 ```bash
-BATCH_SIZE=1 GRAD_ACCUM=4 RUN_ROOT="$WORK_ROOT/runs/refwave_lora_b1" bash train_lora.sh 8 both
+RUN_ROOT= BATCH_SIZE=1 GRAD_ACCUM=4 bash train_lora.sh 8 both
 ```
 
-An 80-GB A100 run has **not** been benchmarked here. Full fine-tuning on a single
-small GPU may not fit even at batch one. No automatic OOM retry changes the
-recipe, drops targets or restarts training with different settings.
+Full training keeps model parameters and optimizer states on GPU, without CPU
+optimizer offload. The proposed CPU-offload memory fix was reverted at the user's
+request. The GPU-only path previously failed during MoonViT backward on a
+4 x 80-GB allocation at batch one, with 6,000 image patches and a 32,768-token wave
+limit. Restoring it does not resolve that OOM; fitting the same workload is not
+guaranteed. No automatic OOM retry changes the recipe, drops targets or restarts
+training with different settings.
 
 ### Data and Objective
 
@@ -241,14 +270,46 @@ Loss-curve learning rates are the rates used for that update, not the next updat
 
 ### W&B (Optional)
 
+From the `RefWave/` repository, after activating your Conda or venv environment:
+
 ```bash
-"${PYTHON_BIN:-.venv/bin/python}" -m pip install -r requirements-tracking.txt
-"${PYTHON_BIN:-.venv/bin/python}" -m wandb login
+source scripts/common.sh
+"$PYTHON_BIN" -m pip install -r requirements-tracking.txt
+"$PYTHON_BIN" -m wandb login
+
+# A fresh experiment with a new output folder and new W&B runs.
+unset RUN_ROOT
 WANDB_MODE=online bash train_lora.sh 8 both
 ```
 
+Setup and training use the same Python selected by `scripts/common.sh`, including
+an active Conda environment. No `.venv/` is required for Conda users.
+Replace `8` with your allocated GPU count, or use `train_full.sh` for full tuning.
+
+Each fresh experiment has its own W&B group, named after the unique `RUN_ROOT`
+folder. Stage 1 and Stage 2 appear as **two separate runs within that group**, for
+example `refwave_lora_8gpu_<timestamp>_<unique>_stage1` and `..._stage2`.
+Only GPU rank 0 logs, so using eight GPUs does not create eight W&B runs per stage.
+To resume, set the original `RUN_ROOT` and keep the same `WANDB_PROJECT` and W&B
+account/team; the stage's run ID is reused. Do **not** unset `RUN_ROOT` when resuming.
+
 No W&B login is required by default. Training and validation losses are always
 written to `training_curve.jsonl` and `validation_curve.jsonl` in each stage.
+With tracking enabled, W&B also receives `train/*` and `validation/*` loss metrics.
+Training metrics are committed after every optimizer update, with charts using
+`optimizer_step` as their X-axis. Validation metrics appear only after validation
+finishes (every 300 updates by default, plus stage end). Terminal loss lines print
+at step 1 and every 10 steps by default; silence between them is not a W&B failure.
+Its local files are under `$RUN_ROOT/stage1/wandb/` and `$RUN_ROOT/stage2/wandb/`.
+An offline compute node can use `WANDB_MODE=offline`; those runs are stored locally
+until synced from an internet-connected machine.
+
+`wandb login` authenticates your account but does not enable tracking in the
+trainer. The startup log reports `W&B tracking mode: online`, `offline`, or
+`disabled`. Set `WANDB_MODE=online` on the **same command line** as the launcher,
+or use `export WANDB_MODE=online` before launching. A non-exported assignment on
+a separate line is not passed to the launcher in a fresh shell. Online mode also
+needs network access from the compute node; login-node connectivity is not enough.
 
 ## 4. Evaluate Generated Predictions
 
@@ -257,24 +318,26 @@ validation queries**, without GT points/GT boxes passed to the model, with no NM
 or max-detections cap. This is validation evaluation, **not a full benchmark**.
 
 ```bash
-bash evaluate.sh 4 "$WORK_ROOT/runs/refwave_lora/stage2/best.pt"
-METHOD=standard bash evaluate.sh 4 "$WORK_ROOT/runs/standard_lora/stage2/best.pt"
+RUN_ROOT="/absolute/path/to/the/refwave/run"  # Printed when training starts.
+bash evaluate.sh 4 "$RUN_ROOT/stage2/best.pt"
+
+METHOD=standard bash evaluate.sh 4 "/absolute/path/to/the/standard/run/stage2/best.pt"
 bash evaluate.sh 4 baseline
 ```
 
-Use the `refwave_full` path for a full fine-tuned checkpoint. The loader restores
+Use the corresponding `refwave_full_...` run for a full fine-tuned checkpoint. The loader restores
 the full trained state, including the output head; it does not use a LoRA-only
 loader for a full checkpoint.
 
 ```bash
-bash evaluate.sh 4 "$WORK_ROOT/runs/refwave_full/stage2/best.pt"
+bash evaluate.sh 4 "/absolute/path/to/the/full/run/stage2/best.pt"
 ```
 
 For independent sequential decoding rather than class/address waves:
 
 ```bash
-CLASS_WAVE=1 BOX_WAVE=1 EVAL_OUTPUT="$WORK_ROOT/evaluation/refwave_sequential" \
-  bash evaluate.sh 4 "$WORK_ROOT/runs/refwave_lora/stage2/best.pt"
+CLASS_WAVE=1 BOX_WAVE=1 EVAL_OUTPUT="$RUN_ROOT/evaluation_sequential" \
+  bash evaluate.sh 4 "$RUN_ROOT/stage2/best.pt"
 ```
 
 RefWave defaults to class waves of 18 and box waves of 200. It reuses projected
@@ -300,7 +363,7 @@ including absent ones; never build the query list from GT-present labels.
 Optional portable model export:
 
 ```bash
-bash export.sh "$WORK_ROOT/runs/refwave_lora/stage2/best.pt" "$WORK_ROOT/exports/refwave_stage2"
+bash export.sh "$RUN_ROOT/stage2/best.pt" "$WORK_ROOT/exports/refwave_stage2"
 ```
 
 ## 5. SLURM
@@ -324,6 +387,9 @@ For 2 GPUs: `sbatch --gres=gpu:2 --export=ALL,GPUS=2 cluster.slurm` plus your
 account/partition arguments. For Conda, export `PYTHON_BIN` before submission.
 An offline worker must see the downloaded assets and the same installed
 environment. No tmux is needed. The job writes `refwave-JOBID.log`.
+Training additionally writes `console.log` in its unique run directory, whose
+path is printed in the SLURM log. Unset `RUN_ROOT` before a fresh submission;
+export the existing run path before submitting a resume or Stage-2-only job.
 
 ## Verification Scope
 
