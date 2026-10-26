@@ -19,6 +19,10 @@ else
   checkpoint=(--checkpoint "$2")
   output_default="$(dirname "$2")/evaluation"
 fi
+ROUND2_EXECUTION="${ROUND2_EXECUTION:-fused_one_pass}"
+if [[ "${METHOD:-refwave}" == refwave ]]; then
+  output_default="${output_default}_${ROUND2_EXECUTION}"
+fi
 export TOKENIZERS_PARALLELISM=false
 export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
 DATA_ROOT="${DATA_ROOT:-$WORK_ROOT/dataset}"
@@ -28,5 +32,7 @@ exec "$PYTHON_BIN" -m torch.distributed.run --standalone --nnodes=1 --nproc_per_
   --records "${EVAL_RECORDS:-$DATA_ROOT/refwave_v1/validation.jsonl}" \
   --output "${EVAL_OUTPUT:-$output_default}" --method "${METHOD:-refwave}" \
   --class-wave "${CLASS_WAVE:-18}" --box-wave "${BOX_WAVE:-200}" \
+  --round2-execution "$ROUND2_EXECUTION" \
+  --max-sequence "${MAX_SEQUENCE:-32768}" \
   --image-token-limit "${IMAGE_TOKEN_LIMIT:-6000}" --max-new-tokens "${MAX_NEW_TOKENS:-16384}" \
   --limit "${EVAL_LIMIT:-0}" --seed "${SEED:-20260908}" "${checkpoint[@]}"

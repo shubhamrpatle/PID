@@ -1,4 +1,4 @@
-"""One-pass RefWave/standard LA training on a single node with 1-8 GPUs."""
+"""Epoch-based RefWave/standard LA training on a single node with 1-8 GPUs."""
 
 from __future__ import annotations
 import argparse
@@ -25,6 +25,7 @@ from .runtime import (
     StopRequest,
 )
 from .data import ClusterDataset
+from .vision_attention import enable_fused_vision_attention
 
 SCHEMA = "refwave-simple-lora-head-v1"
 
@@ -53,19 +54,52 @@ def restore(model, state):
 
 def validate_parent(parent, args):
     config = parent.get("config", {})
+    continuation = getattr(args, "continue_checkpoint", None)
+    expected_stage = "stage2" if continuation else "stage1"
+    records = config.get("records", 0)
+    total_records = records * config.get("epochs", 1)
+    cursor = parent.get("cursor", 0)
+    completed = bool(total_records) and cursor == total_records
+    if config.get("steps") is not None:
+        completed = completed and parent.get("step") == config["steps"]
+    # Best validation weights may precede the final update of a completed stage.
+    path = continuation or getattr(args, "init_checkpoint", None)
+    if not completed and path and (path.parent / "done.json").is_file():
+        done = json.loads((path.parent / "done.json").read_text())
+        completed = (
+            done.get("records") == total_records
+            and done.get("steps") == config.get("steps")
+            and done.get("epochs", 1) == config.get("epochs", 1)
+        )
     if (
         parent.get("schema") != SCHEMA
         or config.get("lora_rank") != args.lora_rank
         or config.get("method") != args.method
-        or (config.get("stage") != "stage1")
-        or (parent.get("cursor") != config.get("records"))
-        or (not config.get("records"))
+        or config.get("stage") != expected_stage
+        or not completed
+        or not 0 < cursor <= total_records
     ):
+        stage_name = "Stage-2" if continuation else "Stage-1"
         raise ValueError(
-            "Stage 2 requires the completed Stage-1 checkpoint of the same method and rank"
+            f"Stage 2 requires weights from a completed {stage_name} run of the same method and rank"
         )
     if config.get("tuning", "lora") != getattr(args, "tuning", "lora"):
-        raise ValueError("Stage 2 must use the same tuning mode as Stage 1")
+        raise ValueError("Stage 2 must use the same tuning mode as its parent")
+
+
+def epoch_updates(size, epochs, seed, per_gpu, world, rank, cursor=0):
+    """Keep every epoch's tail; distribute each record exactly once per epoch."""
+    for epoch in range(cursor // size, epochs):
+        order = np.random.default_rng(seed + epoch).permutation(size).tolist()
+        offset = epoch * size
+        for start in range(max(0, cursor - offset), size, per_gpu * world):
+            selected, end = update_indices(order, start, per_gpu, world, rank)
+            yield selected, offset + end
+
+
+def cursor_after_step(step, size, global_batch):
+    epoch, within = divmod(step, math.ceil(size / global_batch))
+    return epoch * size + min(within * global_batch, size)
 
 
 def average_gradients(parameters, world):
@@ -156,6 +190,8 @@ def run(args):
         if args.tuning == "full"
         else configure_lora_head(model, args.lora_rank)
     )
+    if args.tuning == "full":
+        audit["vision_attention"] = enable_fused_vision_attention(model)
     model.language_model.gradient_checkpointing_enable(
         gradient_checkpointing_kwargs={"use_reentrant": False}
     )
@@ -163,7 +199,7 @@ def run(args):
     model.language_model.config.use_cache = False
     wrapper = ClusterEpisodeModel(
         model,
-        objective_mode="direct_only" if args.method == "standard" else "two_route_equal_mean",
+        objective_mode="direct_only" if args.method in ("standard", "class_isolated") else "two_route_equal_mean",
         full=args.tuning == "full",
     )
 
@@ -181,9 +217,22 @@ def run(args):
     (train, val) = (dataset(args.train_data), dataset(args.validation_data))
     if not len(train) or not len(val):
         raise ValueError("Training and validation must be nonempty")
-    order = np.random.default_rng(args.seed).permutation(len(train)).tolist()
+    epochs = getattr(args, "epochs", 1)
+    total_records = len(train) * epochs
     per_gpu = args.batch_size * args.accumulation
-    total_steps = math.ceil(len(train) / (per_gpu * world))
+    total_steps = epochs * math.ceil(len(train) / (per_gpu * world))
+    output = args.output.resolve()
+    output.mkdir(parents=True, exist_ok=True)
+    contract_path = output / "config.json"
+    checkpoint_path = output / "last.pt"
+    previous = json.loads(contract_path.read_text()) if contract_path.exists() else {}
+    init_sha = sha256_file(args.init_checkpoint) if args.init_checkpoint else None
+    continuation = getattr(args, "continue_checkpoint", None)
+    continue_sha = sha256_file(continuation) if continuation else None
+    if checkpoint_path.exists() and not args.init_checkpoint and not continuation:
+        # Resume restores last.pt, not a newly selected parent checkpoint.
+        init_sha = previous.get("init_checkpoint_sha256")
+        continue_sha = previous.get("continue_checkpoint_sha256")
     contract = dict(
         schema=SCHEMA,
         method=args.method,
@@ -193,7 +242,7 @@ def run(args):
         validation_sha256=sha256_file(args.validation_data),
         records=len(train),
         validation_records=len(val),
-        epochs=1,
+        epochs=epochs,
         steps=total_steps,
         world_size=world,
         batch_size=args.batch_size,
@@ -209,25 +258,35 @@ def run(args):
         image_token_limit=args.image_token_limit,
         trainable=audit,
         synchronized_trainable_initialization=True,
-        init_checkpoint_sha256=sha256_file(args.init_checkpoint) if args.init_checkpoint else None,
+        init_checkpoint_sha256=init_sha,
     )
+    if continue_sha:
+        contract["continue_checkpoint_sha256"] = continue_sha
     contract.update(
         tuning=args.tuning,
         vision_lr=args.vision_lr,
         projector_lr=args.projector_lr,
         optimizer_sharding=args.tuning == "full" and world > 1,
     )
-    output = args.output.resolve()
-    output.mkdir(parents=True, exist_ok=True)
-    contract_path = output / "config.json"
-    if contract_path.exists() and json.loads(contract_path.read_text()) != contract:
+    # Another rank may publish config.json while this rank hashes the inputs.
+    persisted = json.loads(contract_path.read_text()) if contract_path.exists() else None
+    if persisted is not None and persisted != contract:
+        missing = object()
+        changed = sorted(
+            key for key in persisted.keys() | contract.keys()
+            if persisted.get(key, missing) != contract.get(key, missing)
+        )
         raise ValueError(
             "Existing run settings differ. Use a new output directory for a new experiment."
+            f" Changed fields: {', '.join(changed)}"
+            " Saved/requested values: " + json.dumps({
+                key: {"saved": persisted.get(key), "requested": contract.get(key)}
+                for key in changed
+            }, sort_keys=True)
         )
     if rank == 0:
         atomic_json(contract_path, contract)
         print(json.dumps(contract, indent=2), flush=True)
-    checkpoint_path = output / "last.pt"
     saved = (
         torch.load(checkpoint_path, map_location="cpu", weights_only=False, mmap=True)
         if checkpoint_path.exists()
@@ -237,8 +296,10 @@ def run(args):
         if saved.get("schema") != SCHEMA or saved.get("config") != contract:
             raise ValueError("Checkpoint schema/settings differ from this run")
         restore(model, saved["trainable_state"])
-    elif args.init_checkpoint:
-        parent = torch.load(args.init_checkpoint, map_location="cpu", weights_only=False, mmap=True)
+    elif args.init_checkpoint or continuation:
+        parent = torch.load(
+            args.init_checkpoint or continuation, map_location="cpu", weights_only=False, mmap=True
+        )
         validate_parent(parent, args)
         restore(model, parent["trainable_state"])
         del parent
@@ -272,7 +333,7 @@ def run(args):
         scheduler.load_state_dict(saved["scheduler"])
         (cursor, step, best_loss) = (saved["cursor"], saved["step"], saved["best_loss"])
         resume_validation = saved.get("validation")
-        if not 0 <= step <= total_steps or cursor != min(step * per_gpu * world, len(train)):
+        if not 0 <= step <= total_steps or cursor != cursor_after_step(step, len(train), per_gpu * world):
             raise ValueError("Checkpoint cursor does not match its completed optimizer updates")
         rng = saved["rng"][rank]
         random.setstate(rng["python"])
@@ -369,27 +430,29 @@ def run(args):
                 )
         return validation
 
-    if cursor == len(train):
+    if cursor == total_records:
         # A signal on the last update may have saved weights before validation.
         if resume_validation is None:
             save_checkpoint(run_validation())
         if rank == 0:
-            atomic_json(output / "done.json", dict(steps=step, records=cursor, epochs=1))
+            atomic_json(
+                output / "done.json",
+                dict(steps=step, records=cursor, total_records=total_records, epochs=epochs),
+            )
             (output / "interrupted.json").unlink(missing_ok=True)
         if wandb_run:
             wandb_run.finish()
         if world > 1:
             dist.destroy_process_group()
         return
-    indices = []
-    for start in range(cursor, len(train), per_gpu * world):
-        (selected, _) = update_indices(order, start, per_gpu, world, rank)
-        indices.extend(selected)
+    if cursor and cursor % len(train) == 0 and resume_validation is None:
+        save_checkpoint(run_validation())
+    updates = list(epoch_updates(len(train), epochs, args.seed, per_gpu, world, rank, cursor))
+    indices = [index for selected, _ in updates for index in selected]
     loader = iter(make_loader(train, indices, args.workers))
     wrapper.train()
     started = time.time()
-    while cursor < len(train):
-        (selected, end) = update_indices(order, cursor, per_gpu, world, rank)
+    for selected, end in updates:
         optimizer.zero_grad(set_to_none=True)
         rows = []
         for start in range(0, len(selected), args.batch_size):
@@ -408,6 +471,7 @@ def run(args):
         row = dict(
             step=step,
             records_seen=cursor,
+            epoch=cursor / len(train),
             elapsed_seconds=time.time() - started,
             gradient_norm=norm,
             learning_rate=used_rates[0],
@@ -426,7 +490,7 @@ def run(args):
                 )
         interrupted = stop.synchronize(device, world)
         validation = None
-        if not interrupted and (step % args.eval_steps == 0 or cursor == len(train)):
+        if not interrupted and (step % args.eval_steps == 0 or cursor % len(train) == 0):
             validation = run_validation()
         interrupted = stop.synchronize(device, world)
         if validation is not None or interrupted or step % args.save_steps == 0:
@@ -436,7 +500,7 @@ def run(args):
     if rank == 0:
         atomic_json(
             output / ("interrupted.json" if interrupted else "done.json"),
-            dict(steps=step, records=cursor, total_records=len(train), epochs=cursor / len(train)),
+            dict(steps=step, records=cursor, total_records=total_records, epochs=cursor / len(train)),
         )
         if not interrupted:
             (output / "interrupted.json").unlink(missing_ok=True)
@@ -476,10 +540,13 @@ def parse_args():
     for name in ("model", "data-root", "train-data", "validation-data", "output"):
         p.add_argument("--" + name, type=Path, required=True)
     p.add_argument("--stage", choices=("stage1", "stage2"), required=True)
-    p.add_argument("--method", choices=("refwave", "standard"), default="refwave")
+    p.add_argument("--method", choices=("refwave", "standard", "class_isolated"), default="refwave")
     p.add_argument("--tuning", choices=("lora", "full"), default="lora")
-    p.add_argument("--init-checkpoint", type=Path)
+    parent = p.add_mutually_exclusive_group()
+    parent.add_argument("--init-checkpoint", type=Path)
+    parent.add_argument("--continue-checkpoint", type=Path)
     for name, value in (
+        ("epochs", 1),
         ("batch-size", 4),
         ("accumulation", 1),
         ("batch-tokens", 8192),
@@ -503,10 +570,13 @@ def parse_args():
     args = p.parse_args()
     if args.stage == "stage1" and args.init_checkpoint:
         p.error("Stage 1 starts from the released base; omit --init-checkpoint")
+    if args.stage != "stage2" and args.continue_checkpoint:
+        p.error("--continue-checkpoint is for a new Stage-2 continuation run")
     if any(
         (
             getattr(args, k) <= 0
             for k in (
+                "epochs",
                 "batch_size",
                 "accumulation",
                 "batch_tokens",
@@ -518,7 +588,7 @@ def parse_args():
             )
         )
     ):
-        p.error("Batch sizes and intervals must be positive")
+        p.error("Epoch count, batch sizes and intervals must be positive")
     if args.workers < 0 or args.image_token_limit <= 0:
         p.error("Workers must be nonnegative; image-token-limit must be positive")
     return args

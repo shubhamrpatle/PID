@@ -28,3 +28,6 @@ exports/
 # Local extraction helpers are not part of the standalone release.
 tools/extract_core.py
 tools/extract_inference.py
+
+# Local acceptance reports; not part of the release.
+reports/

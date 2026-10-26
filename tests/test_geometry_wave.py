@@ -72,6 +72,7 @@ def test_box_only_wave_logits_equal_separate_addresses():
     decoder.tokenizer = SimpleNamespace(pad_token_id=0)
     decoder.device = torch.device("cpu")
     decoder.geometry_prefix_mode = "box_only"
+    decoder.round2_execution = "fused_one_pass"
     decoder.mask_id, decoder.n_future_tokens = 99, 6
     decoder._results_from_logits = lambda logits, branches, **kwargs: [
         r.clone() for r in logits

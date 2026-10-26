@@ -14,6 +14,7 @@ import torch
 import torch.distributed as dist
 
 from .class_wave import ClassPointBranch
+from .direct_control import detection_question
 from .hybrid_class_wave import CachedHybridClassWaveDecoder
 from .decoder import AddressedCrop, GeometryDecoder
 from .episode import IndexedJsonl, box_text
@@ -127,6 +128,7 @@ class Evaluator:
             image_token_limit=args.image_token_limit,
             prefix_cache_mode="shared",
             geometry_prefix_mode="box_only",
+            round2_execution=args.round2_execution,
         )
         self.args, self.device = args, device
 
@@ -136,6 +138,7 @@ class Evaluator:
         torch.cuda.synchronize(self.device)
         torch.cuda.reset_peak_memory_stats(self.device)
         started = time.perf_counter()
+        geometry_forwards = 0
         generation = dict(
             max_new_tokens=self.args.max_new_tokens,
             temperature=0.7,
@@ -143,7 +146,17 @@ class Evaluator:
             repetition_penalty=1.1,
             generation_mode="hybrid",
         )
-        if self.args.method == "standard":
+        if self.args.method == "class_isolated" and query["task"] == "detection":
+            branches = [
+                ClassPointBranch(b["reference"], detection_question(b["reference"]), seed + i)
+                for i, b in enumerate(query["references"])
+            ]
+            answers, stats = self.points.generate(image, branches, **generation)
+            predictions = []
+            for branch, answer in zip(branches, answers):
+                predictions.extend(parse_geometry(answer["answer"], 4, branch.label))
+            raw, points, round1_seconds = [dict(direct=answers, stats=stats)], [], None
+        elif self.args.method in ("standard", "class_isolated"):
             branch = ClassPointBranch("direct", query["direct_question"], seed)
             rows, projected = self.points._prepare_rows(image, [branch])
             answer = self.points._independent_fallback(branch, rows[0], projected, **generation)
@@ -197,6 +210,7 @@ class Evaluator:
                         group,
                         allow_none=True,
                     )
+                    geometry_forwards += 1 if self.args.round2_execution == "fused_one_pass" else 2
                     for result in output:
                         predictions.extend(parse_geometry(result["answer"], 4, result["label"]))
                     raw.append(dict(round2=output))
@@ -211,6 +225,8 @@ class Evaluator:
             seconds=seconds,
             round1_seconds=round1_seconds,
             round2_seconds=seconds - round1_seconds if round1_seconds is not None else None,
+            round2_execution=self.args.round2_execution if self.args.method == "refwave" else None,
+            round2_prompt_geometry_forwards=geometry_forwards,
             peak_gpu_gib=peak,
         )
 
@@ -253,9 +269,11 @@ def main():
     for name in ("model", "data-root", "records", "output"):
         p.add_argument("--" + name, type=Path, required=True)
     p.add_argument("--checkpoint", type=Path)
-    p.add_argument("--method", choices=("refwave", "standard"), default="refwave")
+    p.add_argument("--method", choices=("refwave", "standard", "class_isolated"), default="refwave")
     p.add_argument("--class-wave", type=int, default=18)
     p.add_argument("--box-wave", type=int, default=200)
+    p.add_argument("--round2-execution", choices=("two_pass", "fused_one_pass"),
+                   default="fused_one_pass")
     p.add_argument("--image-token-limit", type=int, default=6000)
     p.add_argument("--max-new-tokens", type=int, default=16384)
     p.add_argument("--limit", type=int, default=0)
@@ -292,6 +310,7 @@ def main():
         world_size=world,
         class_wave=args.class_wave,
         box_wave=args.box_wave,
+        round2_execution=args.round2_execution if args.method == "refwave" else None,
         image_token_limit=args.image_token_limit,
         max_new_tokens=args.max_new_tokens,
         seed=args.seed,

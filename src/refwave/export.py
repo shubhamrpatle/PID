@@ -37,7 +37,7 @@ def main():
     model.config.text_config = model.language_model.config
     model.config.refwave_round1_answer_format = "geometry_only"
     model.config.refwave_objective_mode = (
-        "direct_only" if saved["config"]["method"] == "standard" else "two_route_equal_mean"
+        "direct_only" if saved["config"]["method"] in ("standard", "class_isolated") else "two_route_equal_mean"
     )
     model.language_model.config.use_cache = True
     model.to(dtype=torch.bfloat16).eval()

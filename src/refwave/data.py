@@ -7,6 +7,7 @@ from .episode import (
     round2_conversation,
     split_waves,
 )
+from .direct_control import isolated_conversations
 
 
 class _NativeMTP6:
@@ -35,7 +36,14 @@ class ClusterDataset(UnifiedEpisodeDataset):
         image = row["image"]
         (pixels, grids, image_tokens) = self._prepare_image(image, row["direct"]["conversations"])
         (direct, round1, round2) = ([], [], [])
-        if self.method == "standard":
+        if self.method == "class_isolated" and row["task"] == "detection":
+            for i, conversation in enumerate(isolated_conversations(row)):
+                direct.append(self._compile(
+                    image, conversation, image_tokens, route="direct",
+                    branch_id=f"{row['episode_id']}:class_direct:{i}",
+                    polarity=row["round1"]["branches"][i]["polarity"],
+                ))
+        elif self.method in ("standard", "class_isolated"):
             direct.append(
                 self._compile(
                     image,

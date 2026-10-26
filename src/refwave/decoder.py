@@ -9,6 +9,32 @@ from .lora import base_causal_lm
 from .shared_prefix import SharedPrefixCache, legacy_key_values
 
 
+def fused_prompt_geometry_inputs(suffix_ids, suffix_attention, prefix_length,
+                                 geometry_ids, geometry_attention, dtype, *, causal_attn=False):
+    """Build native LA binary visibility, preserving the repeated prompt-final token."""
+    batch, width = suffix_ids.shape
+    if width == 0 or geometry_ids.shape != (batch, 6):
+        raise ValueError("Expected address suffixes and exactly six PBD inputs")
+    if suffix_attention.shape != suffix_ids.shape or geometry_attention.shape != geometry_ids.shape:
+        raise ValueError("Input and attention dimensions differ")
+    device = suffix_ids.device
+    prefix_attention = torch.ones((batch, prefix_length), dtype=suffix_attention.dtype, device=device)
+    attention = torch.cat((prefix_attention, suffix_attention, geometry_attention), dim=1)
+    positions = attention.long().cumsum(-1) - 1
+    positions.masked_fill_(attention == 0, 1)
+    positions[:, -6:] -= 1
+    length = width + 6
+    queries = torch.arange(length, device=device)[:, None] + prefix_length
+    keys = torch.arange(prefix_length + length, device=device)[None, :]
+    allowed = (keys <= queries)[None, None].expand(batch, 1, -1, -1)
+    mask = (allowed & attention[:, None, None, :].bool()).to(dtype)
+    if not causal_attn:
+        mask[:, :, -6:, -6:] = 1
+    # Only geometry queries exclude the original copy of the repeated last token.
+    mask[:, :, -6:, -7] = 0
+    return torch.cat((suffix_ids, geometry_ids), dim=1), mask, positions[:, -length:]
+
+
 @dataclass(frozen=True)
 class AddressedCrop:
     """One instance address; global-only RefWave leaves the crop field empty."""
@@ -37,6 +63,7 @@ class GeometryDecoder:
         image_token_limit: int = 6000,
         prefix_cache_mode: str = "shared",
         geometry_prefix_mode: str = "box_only",
+        round2_execution: str = "fused_one_pass",
     ) -> None:
         self.worker = worker
         self.model = worker.model
@@ -57,6 +84,13 @@ class GeometryDecoder:
         if geometry_prefix_mode not in {"ref", "box_only"}:
             raise ValueError("geometry_prefix_mode must be ref or box_only")
         self.geometry_prefix_mode = geometry_prefix_mode
+        if round2_execution not in {"two_pass", "fused_one_pass"}:
+            raise ValueError("round2_execution must be two_pass or fused_one_pass")
+        if round2_execution == "fused_one_pass" and (
+            prefix_cache_mode != "shared" or geometry_prefix_mode != "box_only"
+        ):
+            raise ValueError("One-pass execution requires shared-prefix box-only geometry")
+        self.round2_execution = round2_execution
         self.image_end_id = int(
             self.tokenizer.convert_tokens_to_ids(self.processor.image_end_token)
         )
@@ -218,6 +252,15 @@ class GeometryDecoder:
         *,
         allow_none: bool,
     ) -> list[dict[str, Any]]:
+        if len(suffix_rows) != len(branches) or len(projected_locals) != len(branches):
+            raise ValueError("Inconsistent address branch inputs")
+        if not branches:
+            return []
+        if self.round2_execution == "fused_one_pass":
+            return self._decode_fused_atomic_blocks(
+                prefix_ids, suffix_rows, projected_locals, prefix_key_values,
+                branches, allow_none=allow_none,
+            )
         (suffix_ids, suffix_attention) = self._left_pad_rows(suffix_rows)
         suffix_ids = suffix_ids.to(self.device)
         suffix_attention = suffix_attention.to(self.device)
@@ -272,5 +315,39 @@ class GeometryDecoder:
             return_dict=True,
         )
         hidden = outputs.last_hidden_state[:, -self.n_future_tokens :, :]
+        logits = torch.nn.functional.linear(hidden, causal.lm_head.weight)
+        return self._results_from_logits(logits, branches, allow_none=allow_none)
+
+    def _decode_fused_atomic_blocks(
+        self, prefix_ids, suffix_rows, projected_locals, prefix_key_values,
+        branches, *, allow_none,
+    ):
+        if any(value.numel() for value in projected_locals):
+            raise ValueError("One-pass RefWave uses the cached global image, not local re-entry")
+        causal = base_causal_lm(self.model.language_model)
+        if causal.model.training or causal.model._attn_implementation != "sdpa":
+            raise ValueError("One-pass execution requires evaluation-mode native LA SDPA")
+        if causal.model.block_size != 6 or causal.model.text_mask_token_id != self.mask_id:
+            raise ValueError("The model does not use the expected PBD6 contract")
+        suffix_ids, suffix_attention = self._left_pad_rows(suffix_rows)
+        suffix_ids, suffix_attention = suffix_ids.to(self.device), suffix_attention.to(self.device)
+        if suffix_ids.eq(int(self.model.image_token_index)).any():
+            raise ValueError("Image tokens must already be in the shared prefix")
+        geometry_ids, geometry_attention = self._prepare_geometry_inputs(
+            branches, input_dtype=suffix_ids.dtype, attention_dtype=suffix_attention.dtype,
+            device=self.device, prompt_last_ids=suffix_ids[:, -1],
+        )
+        ids, mask, positions = fused_prompt_geometry_inputs(
+            suffix_ids, suffix_attention, int(prefix_ids.numel()), geometry_ids,
+            geometry_attention, causal.model.get_input_embeddings().weight.dtype,
+            causal_attn=causal.model.causal_attn,
+        )
+        outputs = causal.model(
+            input_ids=ids, visual_features=None, image_token_index=None,
+            attention_mask=mask, position_ids=positions,
+            past_key_values=SharedPrefixCache(prefix_key_values), use_cache=True,
+            output_attentions=False, output_hidden_states=False, return_dict=True,
+        )
+        hidden = outputs.last_hidden_state[:, -6:, :]
         logits = torch.nn.functional.linear(hidden, causal.lm_head.weight)
         return self._results_from_logits(logits, branches, allow_none=allow_none)

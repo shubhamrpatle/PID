@@ -83,7 +83,7 @@ def tiny_trainer(tmp_path, monkeypatch):
     """Exercise the real training loop and checkpoints without allocating a GPU."""
     from test_cluster_training import TinyModel
 
-    state = SimpleNamespace(updates=0, validations=0, on_update=None, on_validation=None)
+    state = SimpleNamespace(updates=0, validations=0, seen=[], on_update=None, on_validation=None)
     handlers = {}
 
     class TorchProxy:
@@ -113,6 +113,7 @@ def tiny_trainer(tmp_path, monkeypatch):
             self.causal = model.language_model
 
         def batch(self, batch, divisor, **kwargs):
+            state.seen.extend(batch)
             loss = sum(p.square().sum() for p in self.model.parameters() if p.requires_grad)
             (loss * len(batch) / divisor).backward()
             state.updates += 1
@@ -131,6 +132,9 @@ def tiny_trainer(tmp_path, monkeypatch):
     monkeypatch.setattr(train, "torch", TorchProxy())
     monkeypatch.setattr(train, "distributed_context", lambda: (0, 0, 1))
     monkeypatch.setattr(train, "load_base", load_base)
+    monkeypatch.setattr(
+        train, "enable_fused_vision_attention", lambda model: "refwave_fused_per_image_sdpa"
+    )
     monkeypatch.setattr(train, "ClusterEpisodeModel", Wrapper)
     monkeypatch.setattr(train, "ClusterDataset", lambda path, *a, **k: [0, 1])
     monkeypatch.setattr(train, "make_loader", lambda dataset, indices, workers: iter(indices))
@@ -147,6 +151,7 @@ def tiny_trainer(tmp_path, monkeypatch):
         learning_rate=2e-5, head_lr=1e-6, vision_lr=1e-6, projector_lr=1e-5,
         warmup_ratio=0.03, output=tmp_path / "run", init_checkpoint=None,
         workers=0, eval_steps=300, save_steps=300, log_steps=10,
+        epochs=1, continue_checkpoint=None,
         wandb_mode="disabled",
     )
     return args, state
@@ -213,3 +218,54 @@ def test_best_pointer_is_recovered_after_interrupted_checkpoint_publication(tiny
     assert state.updates == 2
     assert state.validations == 1
     assert (args.output / "best.pt").resolve() == (args.output / "last.pt").resolve()
+
+
+@pytest.mark.parametrize("method,tuning", [("refwave", "lora"), ("refwave", "full"), ("standard", "lora")])
+@pytest.mark.parametrize("epochs", [1, 2])
+def test_new_run_tolerates_config_published_during_hashing(tiny_trainer, monkeypatch, method, tuning, epochs):
+    args, state = tiny_trainer
+    args.method, args.tuning, args.epochs = method, tuning, epochs
+    train.run(args)
+    expected = json.loads((args.output / "config.json").read_text())
+    args.output = args.output.with_name("fresh_parallel_start")
+    config_path = args.output / "config.json"
+    real_hash = train.sha256_file
+    published = []
+
+    def publish_like_faster_rank(path):
+        if not published:
+            # The current rank has already cached the initial missing config.
+            assert not config_path.exists()
+            train.atomic_json(config_path, expected)
+            published.append(True)
+        return real_hash(path)
+
+    monkeypatch.setattr(train, "sha256_file", publish_like_faster_rank)
+    train.run(args)
+    assert published == [True]
+    assert json.loads(config_path.read_text()) == expected
+    assert json.loads((args.output / "done.json").read_text())["records"] == 2 * epochs
+
+
+def test_existing_empty_config_is_not_treated_as_a_fresh_run(tiny_trainer):
+    args, _ = tiny_trainer
+    args.output.mkdir()
+    config_path = args.output / "config.json"
+    config_path.write_text("{}\n")
+    with pytest.raises(ValueError, match="Existing run settings differ"):
+        train.run(args)
+    assert config_path.read_text() == "{}\n"
+    assert not (args.output / "last.pt").exists()
+
+
+def test_actual_settings_mismatch_reports_fields_without_overwriting(tiny_trainer):
+    args, _ = tiny_trainer
+    train.run(args)
+    before = (args.output / "config.json").read_bytes()
+    checkpoint_sha = train.sha256_file(args.output / "last.pt")
+    args.epochs = 2
+    with pytest.raises(ValueError, match="Changed fields: epochs, steps") as error:
+        train.run(args)
+    assert '"epochs": {"requested": 2, "saved": 1}' in str(error.value)
+    assert (args.output / "config.json").read_bytes() == before
+    assert train.sha256_file(args.output / "last.pt") == checkpoint_sha

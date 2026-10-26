@@ -110,6 +110,35 @@ log-recovery warning in 14.96 seconds**, with CUDA hidden and the actual LA Qwen
 source tests enabled. The skipped tests require optional assets/runtime settings.
 `git diff --check` passed. No GPU training or cluster fit test was performed.
 
+## Fused MoonViT Attention Only (2026-09-08)
+
+After restoring GPU-only training, the user approved an attention-only memory
+optimization. Full training now selects `refwave_fused_per_image_sdpa` on its
+MoonViT block instances. It presents contiguous four-dimensional Q/K/V tensors
+to native PyTorch SDPA, handles each packed image separately and allows only
+flash/memory-efficient CUDA kernels. It does not modify the module's original
+SDPA entry, Qwen masks, LoRA path, model precision, optimizer, objective or existing
+checkpoint recomputation. There is no CPU optimizer offload or external kernel
+dependency. The implementation is recorded in each new full run's configuration;
+the previous full-run configuration requires a fresh output directory.
+
+Developer tests compare masked-reference outputs and Q/K/V gradients, verify
+packed-image isolation, and exercise the actual small LA MoonViT encoder with
+and without whole-encoder checkpointing. Training-loop tests check full-only
+activation, FP32 AdamW state and resumed completion. Optional CUDA tests cover
+BF16 fused forward/backward but are not invoked by any launcher.
+
+All local GPUs had allocated workloads, so CUDA was hidden during verification.
+Cluster CUDA execution, full-size peak memory, training speed and final model
+accuracy have not been measured for this patch. No running job was modified.
+
+The final CPU suite reported **127 passed, 7 skipped and 1 expected log-recovery
+warning in 17.41 seconds**. Five skips require optional assets/runtime settings;
+two require a free CUDA GPU. The small actual MoonViT/Qwen source tests ran.
+`git diff --check` passed. Runtime transfer requires both `src/refwave/train.py`
+and the new `src/refwave/vision_attention.py`; launchers and requirements did not
+change. The source was not pushed or transferred by the assistant.
+
 ## Final Code Review Findings
 
 The review began from local commit `9a9d237`. The following fixes are local
@@ -150,3 +179,98 @@ added to setup/download/train/evaluation launchers.
 
 The assistant has not pushed these review changes to GitHub. Original datasets,
 checkpoints, running jobs and the Pixel-PIVR checkout were left unchanged.
+
+## Multi-Rank Startup Config Race (2026-09-10)
+
+The supplied cluster log stopped on rank 1 at the settings comparison before
+the first optimizer update. Rank 0 had already printed the new configuration.
+The two-epoch implementation cached an absent config as `{}` before hashing
+inputs, then checked file existence again later. If rank 0 published config.json
+between those operations, another rank compared its stale empty snapshot with
+the real settings and incorrectly rejected the fresh run.
+
+A deterministic regression reproduces that exact exception by publishing a
+matching config during input hashing. The fix reads the persisted config at the
+time of comparison. Genuine differences still fail and now name the changed
+fields. Empty existing configs are not silently treated as fresh runs. No
+architecture, objective, hyperparameters, epoch schedule, GPU allocation,
+dependencies or launcher verification steps changed.
+
+Developer tests cover the publication interleaving for RefWave LoRA, RefWave
+full fine-tuning and Standard LoRA at one and two epochs, plus mismatch rejection
+without overwriting config/checkpoint files. The focused suite passed 91 tests
+with 4 optional skips. The full CPU suite passed **198 tests, 13 skipped, one
+expected log-recovery warning, in 10.66 seconds**. The first full-suite invocation
+omitted PYTHONPATH for the distributed test subprocesses; rerunning with the
+same `src` path exported by the launcher resolved that test environment issue.
+
+```bash
+CUDA_VISIBLE_DEVICES='' PYTHONPATH="$PWD/src" \
+  python -m pytest -q
+```
+
+These tests use tiny CPU training stand-ins and CPU distributed optimizer tests;
+they do not establish A100/NCCL execution or full-model memory fit. The remote
+cluster run was not restarted here. Only `src/refwave/train.py` needs transferring
+for this runtime fix; tests and this note are optional maintainer files.
+
+## Four-Process Training Recheck (2026-09-11)
+
+The complete CPU suite now passes **215 tests, 13 skipped**, with one expected
+log-recovery warning, in 25.03 seconds. Bash syntax checks passed for the training,
+evaluation, export, shared environment and SLURM launchers. Python compilation and
+active-Conda interpreter selection passed too.
+
+New maintainer tests execute the actual training loop on four Gloo processes with
+tiny substitute models and records, for RefWave LoRA, Standard LoRA and RefWave
+full mode. They deliberately delay rank 1 until rank 0 publishes config.json,
+request a coordinated stop, resume, complete two epochs with an uneven tail,
+initialize Stage 2 from Stage-1 best weights, and continue from Stage-2 best weights.
+All ranks' combined records are counted to verify exact per-epoch coverage.
+Full mode uses the real sharded AdamW optimizer, consolidation and restoration.
+The test harness uses a separate rendezvous for each stage, matching production's
+separate torchrun invocations. Reusing a Gloo rendezvous across stages failed in
+the initial test harness; no production change was needed for that test issue.
+
+No additional production blocker was found during this recheck. Tests are not
+invoked by any user launcher. The production updates remain `train.sh` (descriptive
+run names) and `src/refwave/train.py` (config-race fix and mismatch diagnostics).
+This does not establish actual A100/NCCL compatibility, full-model peak memory,
+cluster filesystem capacity, or successful online W&B connectivity. No remote
+training, dataset modification, package installation or GPU job was launched.
+
+## Public Release Alignment (2026-10-26)
+
+The package source was aligned to the exact code that produced the paper's
+results. Each evaluation run on the A100 server froze the SHA-256 of every source
+file it executed into its `plan.json`. Three independent runs recorded the same 22
+files for `src/refwave/`: the final rotary-stabilized PID evaluation, the paired
+sequential/packed efficiency run, and the class-isolated evaluation.
+`src/refwave/` now matches all 22 hashes, with no extra and no missing file.
+
+Five files had changed after those evaluations to add an optional causal extent
+control: `data.py`, `episode_model.py`, `evaluate.py`, `model.py` and `train.py`.
+They were restored to the evaluated versions. The causal control itself was never
+trained, produced no checkpoint, and appears in no reported result, so its modules,
+launcher, tests and documentation were removed from the release. That work is
+preserved on the local branch `backup/pre-release-causal-20261026`.
+
+Training provenance was checked against saved run configurations. The PID,
+`standard` and `class_isolated` runs each record two epochs per stage, world size
+eight, seed 20260908, and training/validation hashes whose prefixes match the
+paper's Table 7. The frozen DIOR, DOTAv2, DIOR-RSVG and VRSBench-VG manifests also
+match Table 7. The run directory naming of all three runs is produced only by the
+current `train.sh`; the `refwave_causal_extent` option added to it later was
+removed. No evaluation hash covers shell scripts, so this naming evidence is the
+basis for the launcher version, not a byte-level record.
+
+The complete CPU suite passes **260 tests, 16 skipped**, including the four-process
+distributed trainer for RefWave LoRA and full, Standard LoRA, and class-isolated
+LoRA and full. Run with the package importable, as `setup.sh` arranges through an
+editable install:
+
+```bash
+PYTHONPATH=src python -m pytest -q
+```
+
+No GPU job, training run or dataset change was performed for this alignment.

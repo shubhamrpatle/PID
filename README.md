@@ -1,4 +1,61 @@
-# RefWave
+# PID: Parallel Instance Decoding
+
+Training and evaluation code for **Parallel Instance Decoding (PID)**, a unified
+generative localization framework for language-guided localization in aerial
+imagery. PID separates instance identification from spatial localization: given a
+textual reference, it first generates a variable-length set of point addresses,
+one per matching instance, then predicts the bounding boxes for all identified
+instances in a single parallel decoding pass.
+
+## Naming
+
+The internal method identifier in this codebase is `refwave`, the project's
+working name. It is kept deliberately: `method: refwave` is recorded in the saved
+`config.json` of every trained checkpoint, and the Hugging Face dataset release
+used for training is published under a `refwave_` directory name. Renaming it
+would break loading and provenance for those existing artifacts. Read `refwave`
+as PID throughout.
+
+| Paper name | `METHOD=` value |
+|---|---|
+| PID (ours) | `refwave` |
+| LA-3B (FT), joint direct-box control | `standard` |
+| LA-3B (FT, class-iso.), class-isolated control | `class_isolated` |
+
+## Correspondence with the paper
+
+The paper identifies its data by SHA-256 prefix in Table 7. The training release
+downloaded in step 2 and the frozen evaluation manifests reproduce every prefix:
+
+| File | Records | SHA-256 prefix |
+|---|---:|---|
+| `stage1.jsonl` | 116,386 | `2fd6c5e8df29` |
+| `stage2.jsonl` | 39,851 | `c5d0e3156f2c` |
+| `validation.jsonl` | 740 | `00e14c17087b` |
+| DIOR manifest | 586 | `44b493d6e497` |
+| DOTAv2 manifest | 874 | `ada8bbdc3ff1` |
+| DIOR-RSVG manifest | 7,500 | `11443dbd68a1` |
+| VRSBench-VG manifest | 16,159 | `c96aeb3d8aad` |
+
+The reported PID model was trained on eight GPUs, two epochs per stage, seed
+`20260908`, with the corrected release from step 2. `train.sh` defaults to the
+older `refwave_v1` records, so set `RECORDS_DIR` explicitly:
+
+```bash
+export RECORDS_DIR="$DATA_ROOT/refwave_v6_xview_corrected_20260914"
+METHOD=refwave STAGE1_EPOCHS=2 STAGE2_EPOCHS=2 bash train_full.sh 8 both
+```
+
+The two direct-box controls use the same command with `METHOD=standard` or
+`METHOD=class_isolated`. The saved configuration of the reported PID run records
+`method: refwave`, 2 and 2 epochs, world size 8, seed 20260908, and the three
+training hashes above.
+
+`src/refwave/` is byte-identical to the 22 source files whose SHA-256 hashes were
+frozen into the plans of the evaluation runs that produced the paper's detection,
+efficiency and ablation results.
+
+## Repository notes
 
 A standalone training repository for HBB detection and phrase grounding.
 It does **not** import or require the old Pixel-PIVR checkout, Eagle trainer,
@@ -8,6 +65,16 @@ scripts. Required LA token-label code is included with attribution.
 One source query is an episode: class/phrase-to-points, then point-to-one-box.
 The image is global-only; no magnified local crops are used in this release.
 
+To back up completed cluster runs, see [Upload Runs](docs/UPLOAD_RUNS.md).
+The standalone `upload_cluster_runs.sh` uploads retained checkpoints and results
+to a public Hugging Face repository without changing the training environment.
+
+## License
+
+Apache-2.0, see `LICENSE`. Third-party attribution is in `THIRD_PARTY.md`;
+`src/refwave/native_mtp.py` derives from NVlabs/Eagle under Apache-2.0. Model
+weights and datasets retain their own separate licenses and use conditions.
+
 ## 1. Get the Code and Create an Environment
 
 Use Linux x86-64 with glibc 2.28 or newer, Python 3.10 or 3.11, and a
@@ -15,11 +82,11 @@ CUDA-12.1-compatible NVIDIA driver.
 Clone this standalone repository, not the old Pixel-PIVR repository:
 
 ```bash
-git clone https://github.com/shubhamrpatle/RefWave.git
-cd RefWave
+git clone https://github.com/shubhamrpatle/PID.git
+cd PID
 ```
 
-Run the following commands from the cloned `RefWave/` directory. The code and
+Run the following commands from the cloned `PID/` directory. The code and
 Python environment stay here; downloaded images, model weights and training
 outputs go in the separate `WORK_ROOT` directory selected in step 2. If the
 repository is private, your GitHub account must have access before cloning.
@@ -79,41 +146,57 @@ Choose a writable persistent path on your cluster. With manual venv/Conda setup,
 export the **same** `WORK_ROOT` in every new shell and submission environment.
 Default when unset: the `refwave-assets/` sibling of this repository.
 
-The downloader fetches released [LocateAnything-3B](https://huggingface.co/nvidia/LocateAnything-3B)
-and the [published `refwave_v1/` records](https://huggingface.co/datasets/shubhampatle/Pixel-PIVR-Magnified-v2/tree/main/refwave_v1) in
-[Pixel-PIVR-Magnified-v2](https://huggingface.co/datasets/shubhampatle/Pixel-PIVR-Magnified-v2),
-at pinned revisions.
-The historical dataset name does not mean this is a magnified-crop experiment.
-**Use `refwave_v1/stage1.jsonl`, `stage2.jsonl`, and `validation.jsonl`, not the
-older expanded records under `annotations/` or recipes under `recipes/`.**
-These files contain 116,514, 39,918, and 747 episodes respectively, with both
-rounds stored in each episode. The default download is pinned to dataset commit
-`6ff53cc0ef2a97b04770d9110f8b6d79e9bad6d7`; its annotation hashes match the local
-full-scale training records. This commit updates the guides, not the images or
-training targets.
-Existing train/validation image archives are reused, and downloads are resumable.
-No Hugging Face login is needed for public downloads. Run this step on an
-internet-enabled machine before requesting offline compute nodes.
+The downloader bootstraps released [LocateAnything-3B](https://huggingface.co/nvidia/LocateAnything-3B),
+the existing image archives, and historical `refwave_v1/` records at pinned
+revisions. **For new training, follow it with the corrected-record download below.**
+The downloader remains pinned for old-run reproducibility; it does not automatically
+select the correction. Existing users with extracted images and model weights can
+skip `bash download.sh` and download only these records.
 
-Existing assets can be reused with `MODEL_DIR` and `DATA_ROOT`; the latter must
-contain `refwave_v1/` and `images/`. No dataset audit is run by the launcher.
-You do not need to download, rename or move the individual files manually.
-If the original dataset images are **already extracted**, download only the
-RefWave records (about 1.29 GB) into that existing dataset directory:
+The corrected release is
+[`refwave_v6_xview_corrected_20260914/`](https://huggingface.co/datasets/shubhampatle/Pixel-PIVR-Magnified-v2/tree/591d53da15234597941394f2848740151209434b/refwave_v6_xview_corrected_20260914).
+It contains **116,386 Stage-1, 39,851 Stage-2 and 740 validation episodes**.
+Both RefWave rounds and standard direct-box targets are stored in each episode.
+It repairs xView source category alignment and regenerates affected negatives;
+ambiguous grounding and confirmed benchmark-overlap episodes are quarantined.
+It does not include the rolled-back COD or grounding-balanced extensions.
+See [the correction guide](docs/XVIEW_CORRECTED_V6.md) for counts and limitations.
+The historical dataset name does not imply magnified-crop training.
+
+Run on an internet-enabled node before requesting offline compute nodes.
+Public downloads need no Hugging Face login. Images are unchanged; this command
+downloads only records, manifests and documentation into your existing dataset root:
 
 ```bash
-export DATA_ROOT=/path/to/existing/dataset
+export DATA_ROOT="$WORK_ROOT/dataset"
 hf download shubhampatle/Pixel-PIVR-Magnified-v2 \
   --repo-type dataset \
-  --revision 6ff53cc0ef2a97b04770d9110f8b6d79e9bad6d7 \
-  --include "refwave_v1/*" --local-dir "$DATA_ROOT"
+  --revision 591d53da15234597941394f2848740151209434b \
+  --include "refwave_v6_xview_corrected_20260914/*" --local-dir "$DATA_ROOT"
+export RECORDS_DIR="$DATA_ROOT/refwave_v6_xview_corrected_20260914"
+export EVAL_RECORDS="$RECORDS_DIR/validation.jsonl"
 ```
 
-Keep `DATA_ROOT` exported for training/evaluation. It must contain **both**
-`images/` and `refwave_v1/`; do not set it to the `refwave_v1/` subfolder itself.
+Keep `WORK_ROOT`, `DATA_ROOT` and `RECORDS_DIR` exported in each training shell or
+submission script. For validation inference, also keep `EVAL_RECORDS` exported;
+`evaluate.sh` otherwise retains its historical v1 validation default.
+`DATA_ROOT` contains `images/` and the versioned records directory; do not set it
+to the records subfolder itself. Split membership is defined by the JSONL files,
+not by all files in the reused image directories.
 Set `MODEL_DIR` to existing base LA weights if they are outside the default
 `$WORK_ROOT/LocateAnything-3B/`. This records-only command does not fetch weights
-or extract images. On a new machine, use `bash download.sh` instead.
+or extract images. On a new machine, run `bash download.sh` first.
+No dataset or package audit is required by the training launcher.
+**Start a fresh run for corrected records. Do not switch records while resuming
+an old checkpoint.** Old weights still reflect old annotations and exposure.
+
+### Historical LAE-COD Extension
+
+The earlier `refwave_v2_cod/` extension was rolled back from the current dataset
+branch and is not part of v6. [Its old guide](docs/LAE_COD_UPDATE.md) is retained
+for historical context, not as the current download recipe. The launcher's
+unset `RECORDS_DIR` default remains `refwave_v1` for compatibility with old runs;
+use the explicit export above for new corrected-data training.
 
 Reserve roughly 250 GiB for LoRA or 450 GiB for full fine-tuning, including
 archives, extracted images, environment, model and checkpoints. Storage estimates
@@ -132,16 +215,17 @@ RefWave/
 refwave-assets/
   LocateAnything-3B/
   dataset/
-    refwave_v1/{stage1,stage2,validation}.jsonl
+    refwave_v6_xview_corrected_20260914/{stage1,stage2,validation}.jsonl
+    refwave_v1/...             # preserved historical records
     images/{train,validation}/...
     archives/...
   runs/
-    refwave_lora_8gpu_<UTC-timestamp>_<unique>/
+    refwave_lora_8gpu_s1e2_s2e2_both_<UTC-timestamp>_<unique>/
       console.log
       stage1/
       stage2/
-    refwave_full_8gpu_<UTC-timestamp>_<unique>/...
-    standard_lora_4gpu_<UTC-timestamp>_<unique>/...
+    refwave_full_8gpu_s1e2_s2e2_both_<UTC-timestamp>_<unique>/...
+    standard_lora_4gpu_s1e2_s2e2_both_<UTC-timestamp>_<unique>/...
 ```
 
 ## 3. Train on an Allocated GPU Node
@@ -169,11 +253,45 @@ METHOD=standard bash train_lora.sh 8 both
 ```
 
 Do not start all commands simultaneously on the same allocated GPUs.
+Set the epoch count independently for each stage (both default to `1`):
+
+```bash
+STAGE1_EPOCHS=2 STAGE2_EPOCHS=3 WANDB_MODE=online bash train_lora.sh 8 both
+```
+
+This runs two passes over Stage-1 data, then initializes Stage 2 from
+`stage1/best.pt` and runs three passes over Stage-2 data. The best checkpoint is
+selected across all validation evaluations in the stage, not just the final
+epoch. Stage 2 starts only after Stage 1 completes all requested epochs, with a
+fresh optimizer and scheduler. The same epoch settings work with `train_full.sh`
+and `METHOD=standard`. You can also change the defaults near the top of `train.sh`.
+
 With `RUN_ROOT` unset, each invocation creates a new directory under
-`$WORK_ROOT/runs/`, named by method, tuning mode, GPU count, UTC timestamp and a
-unique suffix. Repeated runs on the same GPU count also get separate folders.
+`$WORK_ROOT/runs/`, named by method, tuning mode, GPU count, stage epoch counts,
+requested stages, UTC timestamp and a unique suffix. For example,
+`refwave_full_4gpu_s1e2_s2e2_both_<timestamp>_<unique>` means RefWave full training
+on four GPUs, with two epochs in each stage. `s1e` and `s2e` are configured epoch
+counts; the next field (`both`, `stage1` or `stage2`) identifies which stages this
+invocation runs. Extra Stage-2 training instead uses names such as
+`refwave_lora_4gpu_stage2_extrae1_<timestamp>_<unique>`.
+Repeated runs with identical settings also get separate folders. An explicit
+`RUN_ROOT` is never renamed, so existing checkpoints and W&B identities remain usable.
 The launcher prints `RUN_ROOT` and the console-log path before training starts.
 Both stages of a `both` invocation stay inside that one run directory.
+
+Optionally add your own label as the third argument to either training wrapper:
+
+```bash
+RUN_ROOT= CONTINUE_FROM= METHOD=standard \
+STAGE1_EPOCHS=1 STAGE2_EPOCHS=1 WANDB_MODE=online \
+bash train_full.sh 8 both ft_2
+```
+
+This creates `standard_full_8gpu_s1e1_s2e1_both_ft_2_<timestamp>_<unique>`.
+W&B stage names and the group inherit this folder name. Labels may contain
+1-64 letters, digits, dots, underscores or hyphens and must start with a letter
+or digit. Reusing a label still creates a unique fresh folder. Labels only name
+new folders; resuming with an explicit `RUN_ROOT` keeps the existing identity.
 
 Terminal output is automatically saved to `<run>/console.log` while still being
 displayed. There is no need to pipe the command through `tee` yourself. Each stage
@@ -189,10 +307,49 @@ RUN_ROOT="/absolute/path/to/existing/run" bash train_lora.sh 8 both
 Use `train_full.sh` for a full-parameter run and retain `METHOD=standard` for the
 direct-box control. Use `stage1` or `stage2` instead of `both` to run one stage.
 Starting `stage2` alone requires an explicit `RUN_ROOT` containing completed
-Stage-1 **last** weights of the same method/tuning mode; its optimizer starts fresh.
-Keep world size, source records, seed, batch and optimization settings unchanged
+Stage-1 **best** weights of the same method/tuning mode; its optimizer starts fresh.
+An already-started Stage 2 resumes its own `stage2/last.pt`, preserving its original
+parent even if the old launcher originally used Stage-1 last weights.
+Keep epoch counts, world size, source records, seed, batch and optimization settings unchanged
 for exact resume. An explicit `RUN_ROOT` opts into reuse of that directory;
 unset it again before starting another fresh experiment.
+
+If an older cluster copy fails on a fresh directory with `Existing run settings
+differ` on one rank just after another rank prints the configuration, update
+`src/refwave/train.py`. The earlier comparison could use a stale missing-config
+snapshot while another rank published `config.json`. The current code rereads
+the atomically published configuration before comparing it. Genuine mismatches
+still stop training and now report the changed fields and saved/requested values;
+do not delete a real run's configuration to bypass them. This is a startup fix,
+not a change to data, losses, precision, optimizer or batch sizes.
+
+### More Training After a Completed Stage 2
+
+Do not increase epochs inside a completed run or delete its completion marker.
+Use its best weights to initialize a **new Stage-2 continuation run**:
+
+```bash
+unset RUN_ROOT
+CONTINUE_FROM="/absolute/path/to/previous/run/stage2/best.pt" \
+STAGE2_EPOCHS=1 STAGE2_LR=5e-6 STAGE2_HEAD_LR=2.5e-7 \
+BATCH_SIZE=8 GRAD_ACCUM=1 BATCH_TOKENS=16384 \
+WANDB_MODE=online bash train_lora.sh 4 stage2
+```
+
+This example matches the previous four-GPU LoRA batch settings and uses lower
+trial learning rates. Set `STAGE2_EPOCHS` to the number of **additional passes in
+this new run**, not the combined epoch count across old and new runs. It skips
+Stage 1 entirely, loads the Stage-2 model weights, resets optimizer/scheduler and
+record progress, and saves to a new folder and W&B run. The old checkpoints are
+untouched. Keep `done.json` beside the source checkpoint when transferring an
+earlier best checkpoint from a completed stage. For Standard LoRA, also set
+`METHOD=standard` and use that method's own Stage-2 checkpoint.
+
+The new run has its own best/last checkpoint selection; compare its validation
+performance with the preserved parent before choosing a final model. To resume
+an interrupted continuation, use its printed `RUN_ROOT`, the same epoch/batch/LR
+settings and `stage2`; `CONTINUE_FROM` can be omitted because `last.pt` preserves
+the original initialization identity.
 
 | Setting | LoRA | Full fine-tuning |
 |---|---|---|
@@ -212,7 +369,8 @@ count. Wave grouping targets 8,192 padded tokens; a larger indivisible wave runs
 alone. A wave contains at most 200 branches, not at most 200 targets per image.
 There is no silent target truncation and no 180-box cap.
 
-`BATCH_SIZE`, `GRAD_ACCUM`, `BATCH_TOKENS`, `WORKERS`, learning rates and `RUN_ROOT`
+`STAGE1_EPOCHS`, `STAGE2_EPOCHS`, `BATCH_SIZE`, `GRAD_ACCUM`, `BATCH_TOKENS`,
+`WORKERS`, learning rates and `RUN_ROOT`
 are explicit environment overrides. For a new memory-constrained LoRA run:
 
 ```bash
@@ -220,12 +378,43 @@ RUN_ROOT= BATCH_SIZE=1 GRAD_ACCUM=4 bash train_lora.sh 8 both
 ```
 
 Full training keeps model parameters and optimizer states on GPU, without CPU
-optimizer offload. The proposed CPU-offload memory fix was reverted at the user's
-request. The GPU-only path previously failed during MoonViT backward on a
-4 x 80-GB allocation at batch one, with 6,000 image patches and a 32,768-token wave
-limit. Restoring it does not resolve that OOM; fitting the same workload is not
-guaranteed. No automatic OOM retry changes the recipe, drops targets or restarts
-training with different settings.
+optimizer offload. No automatic OOM retry changes the recipe, drops targets or
+restarts training with different settings.
+
+### GPU-Only Vision Attention
+
+Full training uses PyTorch's built-in fused SDPA for MoonViT. Packed images are
+processed separately with four-dimensional attention inputs, preserving image
+isolation without constructing the original quadratic mask. Qwen's branch and
+PBD attention masks are unchanged. LoRA and standalone evaluation retain their
+existing attention path.
+
+This changes only the vision attention implementation: FP32 trainable weights,
+GPU AdamW/ZeRO-1 states, BF16 forwards, existing gradient checkpointing, data,
+losses, batch sizes and token limits are preserved. It needs no external
+`flash-attn` or DeepSpeed package, no new dependencies and no launcher prechecks.
+CUDA uses PyTorch's flash or memory-efficient backend; unsupported kernels fail
+rather than silently returning to the high-memory math implementation. CPU
+developer tests use the regular SDPA path.
+
+From `RefWave/`, with your environment activated and `WORK_ROOT` set:
+
+```bash
+RUN_ROOT= WANDB_MODE=online bash train_full.sh 4 both
+```
+
+Replace `4` with your allocated GPU count (1-8). Start a new run directory: the
+full-run configuration now records
+`trainable.vision_attention = refwave_fused_per_image_sdpa`, so old full-run
+configurations are not accepted for exact resume with this code. Checkpoint
+tensor and optimizer formats are unchanged. New runs can resume as documented
+above, using their original `RUN_ROOT`. LoRA run configurations are unchanged.
+
+The previous GPU-only implementation failed during MoonViT backward on a
+4 x 80-GB allocation at batch one. CPU output/gradient equivalence checks do not
+establish that the updated full workload fits or is faster on that cluster;
+CUDA peak memory and seconds per step still need measurement. Floating-point
+rounding can differ between attention kernels.
 
 ### Data and Objective
 
@@ -235,8 +424,13 @@ training with different settings.
 | Stage 2 dense + replay | 23,438 | 16,480 | 39,918 | 1,619,799 |
 | Validation | 397 | 350 | 747 | 84,384 |
 
-One scheduled pass per stage, with the final partial batch retained. On 8 GPUs
-at global batch 32: **3,642 Stage-1 updates**, then **1,248 Stage-2 updates**.
+One scheduled pass per stage by default, configurable independently. Every epoch
+reshuffles the records deterministically and retains its final partial batch.
+On 8 GPUs at global batch 32: **3,642 Stage-1 updates per epoch**, then
+**1,248 Stage-2 updates per epoch**. Total updates are the respective per-epoch
+count multiplied by `STAGE1_EPOCHS` or `STAGE2_EPOCHS`. The training curve and W&B
+also log fractional epoch progress. `config.json` records the unique scheduled
+record count; `records_seen` includes repeated visits across epochs.
 Stage 2 includes 10,952 replay episodes. Episodes are queries, not unique images;
 replay intentionally repeats some Stage-1 data. No standalone pointing records.
 
@@ -254,7 +448,7 @@ GPT: <box><150><240><250><360></box>
 Absent: <box>None</box>
 ```
 
-Validation loss and saving run every 300 optimizer updates and at stage end.
+Validation loss and saving run every 300 optimizer updates and at each epoch end.
 `best.pt` minimizes task-balanced detection/grounding validation loss, **not F1**.
 `last.pt` resumes training. The trainer keeps those two checkpoints per stage.
 An ordinary interrupt requests an aligned checkpoint after the current update;
@@ -288,7 +482,7 @@ Replace `8` with your allocated GPU count, or use `train_full.sh` for full tunin
 
 Each fresh experiment has its own W&B group, named after the unique `RUN_ROOT`
 folder. Stage 1 and Stage 2 appear as **two separate runs within that group**, for
-example `refwave_lora_8gpu_<timestamp>_<unique>_stage1` and `..._stage2`.
+example `refwave_lora_8gpu_s1e2_s2e2_both_<timestamp>_<unique>_stage1` and `..._stage2`.
 Only GPU rank 0 logs, so using eight GPUs does not create eight W&B runs per stage.
 To resume, set the original `RUN_ROOT` and keep the same `WANDB_PROJECT` and W&B
 account/team; the stage's run ID is reused. Do **not** unset `RUN_ROOT` when resuming.
@@ -346,7 +540,24 @@ global vision across rounds and shares Qwen prefixes within each round; it does
 box/None. Direct-box control uses the native LA generator. Existing decoding
 rules are retained; these should not be presented as identical output grammars.
 
-Outputs: `evaluation/predictions.rank*.jsonl`, `metrics.json`, `config.json` and
+Round 2 now defaults to `ROUND2_EXECUTION=fused_one_pass`: each wave combines
+its address prompts and six-position geometry inputs into **one Qwen forward**.
+`BOX_WAVE=1` also uses one forward per address. Prefix preparation and Round 1
+are separate work; this does not mean one forward for the entire image.
+No retraining is needed. Training, prompts, point filtering and scoring are unchanged.
+BF16 fusion can slightly change coordinates or `None` decisions, so historical
+two-pass results must not be relabeled as one-pass results.
+
+For the explicit two-pass reference only:
+
+```bash
+ROUND2_EXECUTION=two_pass bash evaluate.sh 4 "$RUN_ROOT/stage2/best.pt"
+```
+
+RefWave outputs default to `evaluation_fused_one_pass/` alongside the checkpoint
+(`evaluation_two_pass/` for the reference). `EVAL_OUTPUT` overrides this directory.
+Standard/baseline controls retain their existing output directory and decoding.
+Outputs: `predictions.rank*.jsonl`, `metrics.json`, `config.json` and
 `done.json` alongside the checkpoint. Each shard is resumable with identical
 settings. Detection uses class-aware greedy one-to-one IoU@0.5 P/R/F1. Grounding
 additionally reports first-box Acc@0.5, Acc@0.7 and mean IoU on single-GT queries.
@@ -400,3 +611,11 @@ Full fine-tuning, fresh A100 execution and generated-score equivalence are not
 guaranteed solely by CPU tests. See `VERIFICATION.md` for checks actually run.
 The tests are for maintainers; they are not part of environment setup, data
 download or the training/evaluation workflow.
+# Full-parameter ablation controls
+
+For standard multi-category direct boxes and class-isolated direct boxes on the
+same records, see [Direct-box ablations](docs/DIRECT_BOX_ABLATIONS.md).
+Select `METHOD=standard` or `METHOD=class_isolated` with `train_lora.sh` or
+`train_full.sh`. For a matched comparison against RefWave, use the same wrapper,
+record files, epochs, batch settings and validation-selection policy for both.
+The existing RefWave default is unchanged; no new dataset download is required.
