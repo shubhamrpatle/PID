@@ -120,8 +120,8 @@ efficiency report from saved predictions without new inference.
 
 ## Tests
 
-Developer tests sit beside each package. With the scorer downloaded by step 3 and
-the model runtime from step 2, these pass without any benchmark data:
+Developer tests sit beside each package. With only the scorer downloaded by step 3,
+these pass from a fresh clone, without the model or any benchmark data:
 
 | Package | Result |
 |---|---|
