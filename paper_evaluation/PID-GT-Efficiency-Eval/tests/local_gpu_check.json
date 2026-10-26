@@ -1,0 +1,839 @@
+{
+  "budget": 64,
+  "device": "NVIDIA RTX A6000",
+  "pairs": [
+    {
+      "modes": {
+        "packed": {
+          "budget_saturated_branches": 0,
+          "component_seconds": {
+            "discovery_and_address_construction": 0.42468162812292576,
+            "extent_and_legacy_parsing": 0.0003395024687051773,
+            "image_and_prefix": 0.40952205285429955,
+            "native_parser_and_outer_overhead": 0.0007111411541700363
+          },
+          "contained_predictions": [],
+          "dataset": "DIOR",
+          "dedup_contained_predictions": [],
+          "eos_branches": 1,
+          "execution_mode": "packed",
+          "generated_branches": 1,
+          "generated_text_tokens": 48,
+          "generated_tokens": 48,
+          "generation_seed": 2455792748,
+          "geometry_tokens": 0,
+          "grammar_valid_branches": 0,
+          "image_encodes": 1,
+          "image_id": "0",
+          "inner_pipeline_seconds": 0.8345431834459305,
+          "invalid_items": 0,
+          "latency_seconds": 0.8352543246001005,
+          "peak_gpu_mb": 7608.9248046875,
+          "plan_sha256": "c59613ec431d724eee7d9c4d0d830542a582a0b5bde4737d39f610807f8289d7",
+          "point_answers": [
+            {
+              "answer": "<ref>basketball court</ref><box><535><500><588><565></box><box><545><320><584><388></box><box><716><497><750><557></box><box><722><298><747><346></box><box><730><832><754><857></box><box><734><702><755><727></box><box><736><775><752><790></box><|im_end|>",
+              "fallback_reason": null,
+              "forward_steps": 9,
+              "full_prompt_replays": 0,
+              "hybrid_ar_transitions": 0,
+              "label": "basketballcourt",
+              "question": "Point to all instances that match the following categories: basketball court.",
+              "seed": 3747130599,
+              "syntax_closed_at_token_bound": false,
+              "tokens_generated": 48
+            }
+          ],
+          "point_duplicates": 0,
+          "points": [],
+          "predictions": [],
+          "prefix_forwards": 1,
+          "preparation_seconds": 0.40952205285429955,
+          "protocol": "pid_packed_all_v1",
+          "query": {
+            "class_specs": [
+              {
+                "canonical": "basketballcourt",
+                "lae_name": "basketballcourt",
+                "prompt": "basketball court"
+              }
+            ],
+            "suite": "DIOR",
+            "uid": "0"
+          },
+          "refinements": [],
+          "round1": {
+            "architecture": "class_addressed_shared_prefix_point_wave",
+            "branches": 1,
+            "effective_wave_sizes": [
+              1
+            ],
+            "end_to_end_seconds": 0.42439072020351887,
+            "external_image_prefix_reused": true,
+            "fallback_qwen_full_prompt_forwards": 0,
+            "fallbacks": 0,
+            "global_moonvit_encodes": 0,
+            "peak_gpu_mb": 7560.67529296875,
+            "projected_global_tokens": 841,
+            "qwen_branch_prefill_forwards": 1,
+            "qwen_generation_iterations": 9,
+            "qwen_global_prefix_forwards": 0,
+            "requested_wave_size": 1,
+            "shared_prefix_tokens": 862,
+            "suffix_length_bucketing": false,
+            "suffix_length_buckets": [
+              18
+            ],
+            "syntax_closed_at_token_bound": 0,
+            "wave_stats": [
+              {
+                "ar_forward_calls": 0,
+                "branch_indices": [
+                  0
+                ],
+                "branches": 1,
+                "fallbacks": 0,
+                "full_prompt_replays": 0,
+                "hybrid_ar_transitions": 0,
+                "iterations": 9,
+                "maximum_suffix_tokens": 18,
+                "mtp_forward_calls": 9,
+                "prefix_tokens": 862,
+                "suffix_token_lengths": [
+                  18
+                ],
+                "suffix_tokens_max": 18,
+                "suffix_tokens_min": 18
+              }
+            ],
+            "waves": 1
+          },
+          "round1_seconds": 0.8342036809772253,
+          "round2": {
+            "actual_round2_forwards": 0,
+            "addresses": 0,
+            "cross_round_cache_reuse": true,
+            "effective_wave_sizes": [],
+            "end_to_end_seconds": 6.7409127950668335e-06,
+            "global_image_preprocessing_calls": 0,
+            "global_moonvit_encodes": 0,
+            "layout": "packed_all",
+            "local_moonvit_encodes": 0,
+            "model_seconds": 6.252899765968323e-06,
+            "oom_policy": "raise_without_splitting",
+            "oom_retries": 0,
+            "parallel_width": "all_predicted_addresses",
+            "peak_gpu_mb": 7519.9130859375,
+            "preparation_seconds": 4.880130290985107e-07,
+            "protocol": "pid_packed_all_v1",
+            "qwen_branch_suffix_forwards": 0,
+            "qwen_fused_prompt_geometry_forwards": 0,
+            "qwen_geometry_forwards": 0,
+            "qwen_global_prefix_forwards": 0,
+            "qwen_total_forwards": 0,
+            "requested_wave_size": 0,
+            "round2_execution": "fused_one_pass",
+            "waves": 0
+          },
+          "round2_seconds": 0.0003395024687051773,
+          "saturated_queries": 0,
+          "suite": "DIOR",
+          "task": "detection",
+          "uid": "0"
+        },
+        "sequential": {
+          "budget_saturated_branches": 0,
+          "component_seconds": {
+            "discovery_and_address_construction": 0.4009389113634825,
+            "extent_and_legacy_parsing": 0.0003358498215675354,
+            "image_and_prefix": 0.19235573150217533,
+            "native_parser_and_outer_overhead": 0.0003727097064256668
+          },
+          "contained_predictions": [],
+          "dataset": "DIOR",
+          "dedup_contained_predictions": [],
+          "eos_branches": 1,
+          "execution_mode": "sequential",
+          "generated_branches": 1,
+          "generated_text_tokens": 48,
+          "generated_tokens": 48,
+          "generation_seed": 2455792748,
+          "geometry_tokens": 0,
+          "grammar_valid_branches": 0,
+          "image_encodes": 1,
+          "image_id": "0",
+          "inner_pipeline_seconds": 0.5936304926872253,
+          "invalid_items": 0,
+          "latency_seconds": 0.594003202393651,
+          "peak_gpu_mb": 7608.7998046875,
+          "plan_sha256": "c59613ec431d724eee7d9c4d0d830542a582a0b5bde4737d39f610807f8289d7",
+          "point_answers": [
+            {
+              "answer": "<ref>basketball court</ref><box><535><500><588><565></box><box><545><320><584><388></box><box><716><497><750><557></box><box><722><298><747><346></box><box><730><832><754><857></box><box><734><702><755><727></box><box><736><775><752><790></box><|im_end|>",
+              "fallback_reason": null,
+              "forward_steps": 9,
+              "full_prompt_replays": 0,
+              "hybrid_ar_transitions": 0,
+              "label": "basketballcourt",
+              "question": "Point to all instances that match the following categories: basketball court.",
+              "seed": 3747130599,
+              "syntax_closed_at_token_bound": false,
+              "tokens_generated": 48
+            }
+          ],
+          "point_duplicates": 0,
+          "points": [],
+          "predictions": [],
+          "prefix_forwards": 1,
+          "preparation_seconds": 0.19235573150217533,
+          "protocol": "pid_sequential_extent_v1",
+          "query": {
+            "class_specs": [
+              {
+                "canonical": "basketballcourt",
+                "lae_name": "basketballcourt",
+                "prompt": "basketball court"
+              }
+            ],
+            "suite": "DIOR",
+            "uid": "0"
+          },
+          "refinements": [],
+          "round1": {
+            "architecture": "class_addressed_shared_prefix_point_wave",
+            "branches": 1,
+            "effective_wave_sizes": [
+              1
+            ],
+            "end_to_end_seconds": 0.40050090849399567,
+            "external_image_prefix_reused": true,
+            "fallback_qwen_full_prompt_forwards": 0,
+            "fallbacks": 0,
+            "global_moonvit_encodes": 0,
+            "peak_gpu_mb": 7560.67529296875,
+            "projected_global_tokens": 841,
+            "qwen_branch_prefill_forwards": 1,
+            "qwen_generation_iterations": 9,
+            "qwen_global_prefix_forwards": 0,
+            "requested_wave_size": 1,
+            "shared_prefix_tokens": 862,
+            "suffix_length_bucketing": false,
+            "suffix_length_buckets": [
+              18
+            ],
+            "syntax_closed_at_token_bound": 0,
+            "wave_stats": [
+              {
+                "ar_forward_calls": 0,
+                "branch_indices": [
+                  0
+                ],
+                "branches": 1,
+                "fallbacks": 0,
+                "full_prompt_replays": 0,
+                "hybrid_ar_transitions": 0,
+                "iterations": 9,
+                "maximum_suffix_tokens": 18,
+                "mtp_forward_calls": 9,
+                "prefix_tokens": 862,
+                "suffix_token_lengths": [
+                  18
+                ],
+                "suffix_tokens_max": 18,
+                "suffix_tokens_min": 18
+              }
+            ],
+            "waves": 1
+          },
+          "round1_seconds": 0.5932946428656578,
+          "round2": {
+            "actual_round2_forwards": 0,
+            "addresses": 0,
+            "cross_round_cache_reuse": true,
+            "effective_wave_sizes": [],
+            "end_to_end_seconds": 6.671994924545288e-06,
+            "global_image_preprocessing_calls": 0,
+            "global_moonvit_encodes": 0,
+            "layout": "sequential_extent",
+            "local_moonvit_encodes": 0,
+            "model_seconds": 6.251037120819092e-06,
+            "oom_policy": "raise_without_fallback",
+            "oom_retries": 0,
+            "parallel_width": 1,
+            "peak_gpu_mb": 7520.0380859375,
+            "preparation_seconds": 4.209578037261963e-07,
+            "protocol": "pid_sequential_extent_v1",
+            "qwen_branch_suffix_forwards": 0,
+            "qwen_fused_prompt_geometry_forwards": 0,
+            "qwen_geometry_forwards": 0,
+            "qwen_global_prefix_forwards": 0,
+            "qwen_total_forwards": 0,
+            "requested_wave_size": 1,
+            "round2_execution": "fused_one_pass",
+            "waves": 0
+          },
+          "round2_seconds": 0.0003358498215675354,
+          "saturated_queries": 0,
+          "suite": "DIOR",
+          "task": "detection",
+          "uid": "0"
+        }
+      },
+      "order": [
+        "packed",
+        "sequential"
+      ],
+      "plan_sha256": "c59613ec431d724eee7d9c4d0d830542a582a0b5bde4737d39f610807f8289d7",
+      "suite": "DIOR",
+      "uid": "0"
+    },
+    {
+      "modes": {
+        "packed": {
+          "budget_saturated_branches": 2,
+          "component_seconds": {
+            "discovery_and_address_construction": 1.1134821362793446,
+            "extent_and_legacy_parsing": 0.03656417690217495,
+            "image_and_prefix": 0.3193215914070606,
+            "native_parser_and_outer_overhead": 0.0008543543517589569
+          },
+          "contained_predictions": [],
+          "dataset": "DOTAv2",
+          "dedup_contained_predictions": [],
+          "eos_branches": 1,
+          "execution_mode": "packed",
+          "generated_branches": 3,
+          "generated_text_tokens": 148,
+          "generated_tokens": 154,
+          "generation_seed": 3894917991,
+          "geometry_tokens": 6,
+          "grammar_valid_branches": 0,
+          "image_encodes": 1,
+          "image_id": "0",
+          "inner_pipeline_seconds": 1.4693679045885801,
+          "invalid_items": 0,
+          "latency_seconds": 1.470222258940339,
+          "peak_gpu_mb": 7685.896484375,
+          "plan_sha256": "c59613ec431d724eee7d9c4d0d830542a582a0b5bde4737d39f610807f8289d7",
+          "point_answers": [
+            {
+              "answer": "<ref>ship</ref><box><11><237><16><279></box><box><13><321><18><356></box><box><14><569><25><594></box><box><22><250><33><277></box><box><27><589><42><610></box><box><35><268><55><294></box><box><58><625><67><640></box><box><62><74><83><92></box><box><76><630><94><654></box><box><81><93><99><121></box><box><86><397><96><415></box>",
+              "fallback_reason": "max_new_tokens",
+              "forward_steps": 22,
+              "full_prompt_replays": 0,
+              "hybrid_ar_transitions": 3,
+              "label": "ship",
+              "question": "Point to all instances that match the following categories: ship.",
+              "seed": 4238789330,
+              "syntax_closed_at_token_bound": false,
+              "tokens_generated": 69
+            },
+            {
+              "answer": "<ref>harbor</ref><box><182><500><1000><1000></box><|im_end|>",
+              "fallback_reason": null,
+              "forward_steps": 3,
+              "full_prompt_replays": 0,
+              "hybrid_ar_transitions": 0,
+              "label": "harbor",
+              "question": "Point to all instances that match the following categories: harbor.",
+              "seed": 1911868764,
+              "syntax_closed_at_token_bound": false,
+              "tokens_generated": 11
+            },
+            {
+              "answer": "<ref>small vehicle</ref><box><11><436></box><box><17><815><27><821></box><box><34><824><43><833></box><box><44><818><55><829></box><box><78><844><84><854></box><box><88><832><99><841></box><box><101><819><114><830></box><box><112><806><126><816></box><box><132><792><142><805></box><box><151><781><157><791></box><box><163><775><171><785></box>",
+              "fallback_reason": "max_new_tokens",
+              "forward_steps": 14,
+              "full_prompt_replays": 0,
+              "hybrid_ar_transitions": 1,
+              "label": "small vehicle",
+              "question": "Point to all instances that match the following categories: small vehicle.",
+              "seed": 2099997500,
+              "syntax_closed_at_token_bound": false,
+              "tokens_generated": 68
+            }
+          ],
+          "point_duplicates": 0,
+          "points": [
+            {
+              "label": "small vehicle",
+              "point": [
+                11.264,
+                446.464
+              ],
+              "raw_label": "small vehicle",
+              "score": 1.0,
+              "source": "point"
+            }
+          ],
+          "predictions": [],
+          "prefix_forwards": 1,
+          "preparation_seconds": 0.3193215914070606,
+          "protocol": "pid_packed_all_v1",
+          "query": {
+            "class_specs": [
+              {
+                "canonical": "ship",
+                "lae_name": "ship",
+                "prompt": "ship"
+              },
+              {
+                "canonical": "harbor",
+                "lae_name": "harbor",
+                "prompt": "harbor"
+              },
+              {
+                "canonical": "small vehicle",
+                "lae_name": "small vehicle",
+                "prompt": "small vehicle"
+              }
+            ],
+            "suite": "DOTAv2",
+            "uid": "0"
+          },
+          "refinements": [
+            {
+              "address_id": "0",
+              "answer": "<ref>small vehicle</ref><box>None</box>",
+              "block_tokens": [
+                151668,
+                4064,
+                151669
+              ],
+              "block_type": "empty_box",
+              "label": "small vehicle"
+            }
+          ],
+          "round1": {
+            "architecture": "class_addressed_shared_prefix_point_wave",
+            "branches": 3,
+            "effective_wave_sizes": [
+              3
+            ],
+            "end_to_end_seconds": 1.113007664680481,
+            "external_image_prefix_reused": true,
+            "fallback_qwen_full_prompt_forwards": 0,
+            "fallbacks": 0,
+            "global_moonvit_encodes": 0,
+            "peak_gpu_mb": 7592.5419921875,
+            "projected_global_tokens": 1369,
+            "qwen_branch_prefill_forwards": 1,
+            "qwen_generation_iterations": 22,
+            "qwen_global_prefix_forwards": 0,
+            "requested_wave_size": 3,
+            "shared_prefix_tokens": 1390,
+            "suffix_length_bucketing": false,
+            "suffix_length_buckets": [
+              17,
+              18
+            ],
+            "syntax_closed_at_token_bound": 0,
+            "wave_stats": [
+              {
+                "ar_forward_calls": 11,
+                "branch_indices": [
+                  0,
+                  1,
+                  2
+                ],
+                "branches": 3,
+                "fallbacks": 2,
+                "full_prompt_replays": 0,
+                "hybrid_ar_transitions": 4,
+                "iterations": 22,
+                "maximum_suffix_tokens": 18,
+                "mtp_forward_calls": 17,
+                "prefix_tokens": 1390,
+                "suffix_token_lengths": [
+                  17,
+                  17,
+                  18
+                ],
+                "suffix_tokens_max": 18,
+                "suffix_tokens_min": 17
+              }
+            ],
+            "waves": 1
+          },
+          "round1_seconds": 1.4328037276864052,
+          "round2": {
+            "actual_round2_forwards": 1,
+            "addresses": 1,
+            "cross_round_cache_reuse": true,
+            "effective_wave_sizes": [
+              1
+            ],
+            "end_to_end_seconds": 0.03619905933737755,
+            "global_image_preprocessing_calls": 0,
+            "global_moonvit_encodes": 0,
+            "layout": "packed_all",
+            "local_moonvit_encodes": 0,
+            "model_seconds": 0.03331976756453514,
+            "oom_policy": "raise_without_splitting",
+            "oom_retries": 0,
+            "parallel_width": "all_predicted_addresses",
+            "peak_gpu_mb": 7555.21142578125,
+            "preparation_seconds": 0.0028792917728424072,
+            "protocol": "pid_packed_all_v1",
+            "qwen_branch_suffix_forwards": 0,
+            "qwen_fused_prompt_geometry_forwards": 1,
+            "qwen_geometry_forwards": 0,
+            "qwen_global_prefix_forwards": 0,
+            "qwen_total_forwards": 1,
+            "requested_wave_size": 1,
+            "round2_execution": "fused_one_pass",
+            "waves": 1
+          },
+          "round2_seconds": 0.03656417690217495,
+          "saturated_queries": 2,
+          "suite": "DOTAv2",
+          "task": "detection",
+          "uid": "0"
+        },
+        "sequential": {
+          "budget_saturated_branches": 2,
+          "component_seconds": {
+            "discovery_and_address_construction": 1.2108485903590918,
+            "extent_and_legacy_parsing": 0.04363802447915077,
+            "image_and_prefix": 0.3171475902199745,
+            "native_parser_and_outer_overhead": 0.008530441671609879
+          },
+          "contained_predictions": [],
+          "dataset": "DOTAv2",
+          "dedup_contained_predictions": [],
+          "eos_branches": 1,
+          "execution_mode": "sequential",
+          "generated_branches": 3,
+          "generated_text_tokens": 148,
+          "generated_tokens": 154,
+          "generation_seed": 3894917991,
+          "geometry_tokens": 6,
+          "grammar_valid_branches": 0,
+          "image_encodes": 1,
+          "image_id": "0",
+          "inner_pipeline_seconds": 1.571634205058217,
+          "invalid_items": 0,
+          "latency_seconds": 1.580164646729827,
+          "peak_gpu_mb": 7685.896484375,
+          "plan_sha256": "c59613ec431d724eee7d9c4d0d830542a582a0b5bde4737d39f610807f8289d7",
+          "point_answers": [
+            {
+              "answer": "<ref>ship</ref><box><11><237><16><279></box><box><13><321><18><356></box><box><14><569><25><594></box><box><22><250><33><277></box><box><27><589><42><610></box><box><35><268><55><294></box><box><58><625><67><640></box><box><62><74><83><92></box><box><76><630><94><654></box><box><81><93><99><121></box><box><86><397><96><415></box>",
+              "fallback_reason": "max_new_tokens",
+              "forward_steps": 22,
+              "full_prompt_replays": 0,
+              "hybrid_ar_transitions": 3,
+              "label": "ship",
+              "question": "Point to all instances that match the following categories: ship.",
+              "seed": 4238789330,
+              "syntax_closed_at_token_bound": false,
+              "tokens_generated": 69
+            },
+            {
+              "answer": "<ref>harbor</ref><box><182><500><1000><1000></box><|im_end|>",
+              "fallback_reason": null,
+              "forward_steps": 3,
+              "full_prompt_replays": 0,
+              "hybrid_ar_transitions": 0,
+              "label": "harbor",
+              "question": "Point to all instances that match the following categories: harbor.",
+              "seed": 1911868764,
+              "syntax_closed_at_token_bound": false,
+              "tokens_generated": 11
+            },
+            {
+              "answer": "<ref>small vehicle</ref><box><11><436></box><box><17><815><27><821></box><box><34><824><43><833></box><box><44><818><55><829></box><box><78><844><84><854></box><box><88><832><99><841></box><box><101><819><114><830></box><box><112><806><126><816></box><box><132><792><142><805></box><box><151><781><157><791></box><box><163><775><171><785></box>",
+              "fallback_reason": "max_new_tokens",
+              "forward_steps": 14,
+              "full_prompt_replays": 0,
+              "hybrid_ar_transitions": 1,
+              "label": "small vehicle",
+              "question": "Point to all instances that match the following categories: small vehicle.",
+              "seed": 2099997500,
+              "syntax_closed_at_token_bound": false,
+              "tokens_generated": 68
+            }
+          ],
+          "point_duplicates": 0,
+          "points": [
+            {
+              "label": "small vehicle",
+              "point": [
+                11.264,
+                446.464
+              ],
+              "raw_label": "small vehicle",
+              "score": 1.0,
+              "source": "point"
+            }
+          ],
+          "predictions": [],
+          "prefix_forwards": 1,
+          "preparation_seconds": 0.3171475902199745,
+          "protocol": "pid_sequential_extent_v1",
+          "query": {
+            "class_specs": [
+              {
+                "canonical": "ship",
+                "lae_name": "ship",
+                "prompt": "ship"
+              },
+              {
+                "canonical": "harbor",
+                "lae_name": "harbor",
+                "prompt": "harbor"
+              },
+              {
+                "canonical": "small vehicle",
+                "lae_name": "small vehicle",
+                "prompt": "small vehicle"
+              }
+            ],
+            "suite": "DOTAv2",
+            "uid": "0"
+          },
+          "refinements": [
+            {
+              "address_id": "0",
+              "answer": "<ref>small vehicle</ref><box>None</box>",
+              "block_tokens": [
+                151668,
+                4064,
+                151669
+              ],
+              "block_type": "empty_box",
+              "label": "small vehicle"
+            }
+          ],
+          "round1": {
+            "architecture": "class_addressed_shared_prefix_point_wave",
+            "branches": 3,
+            "effective_wave_sizes": [
+              3
+            ],
+            "end_to_end_seconds": 1.2102169897407293,
+            "external_image_prefix_reused": true,
+            "fallback_qwen_full_prompt_forwards": 0,
+            "fallbacks": 0,
+            "global_moonvit_encodes": 0,
+            "peak_gpu_mb": 7592.5419921875,
+            "projected_global_tokens": 1369,
+            "qwen_branch_prefill_forwards": 1,
+            "qwen_generation_iterations": 22,
+            "qwen_global_prefix_forwards": 0,
+            "requested_wave_size": 3,
+            "shared_prefix_tokens": 1390,
+            "suffix_length_bucketing": false,
+            "suffix_length_buckets": [
+              17,
+              18
+            ],
+            "syntax_closed_at_token_bound": 0,
+            "wave_stats": [
+              {
+                "ar_forward_calls": 11,
+                "branch_indices": [
+                  0,
+                  1,
+                  2
+                ],
+                "branches": 3,
+                "fallbacks": 2,
+                "full_prompt_replays": 0,
+                "hybrid_ar_transitions": 4,
+                "iterations": 22,
+                "maximum_suffix_tokens": 18,
+                "mtp_forward_calls": 17,
+                "prefix_tokens": 1390,
+                "suffix_token_lengths": [
+                  17,
+                  17,
+                  18
+                ],
+                "suffix_tokens_max": 18,
+                "suffix_tokens_min": 17
+              }
+            ],
+            "waves": 1
+          },
+          "round1_seconds": 1.5279961805790663,
+          "round2": {
+            "actual_round2_forwards": 1,
+            "addresses": 1,
+            "cross_round_cache_reuse": true,
+            "effective_wave_sizes": [
+              1
+            ],
+            "end_to_end_seconds": 0.04317542165517807,
+            "global_image_preprocessing_calls": 0,
+            "global_moonvit_encodes": 0,
+            "layout": "sequential_extent",
+            "local_moonvit_encodes": 0,
+            "model_seconds": 0.038593173027038574,
+            "oom_policy": "raise_without_fallback",
+            "oom_retries": 0,
+            "parallel_width": 1,
+            "peak_gpu_mb": 7555.21142578125,
+            "preparation_seconds": 0.004582248628139496,
+            "protocol": "pid_sequential_extent_v1",
+            "qwen_branch_suffix_forwards": 0,
+            "qwen_fused_prompt_geometry_forwards": 1,
+            "qwen_geometry_forwards": 0,
+            "qwen_global_prefix_forwards": 0,
+            "qwen_total_forwards": 1,
+            "requested_wave_size": 1,
+            "round2_execution": "fused_one_pass",
+            "waves": 1
+          },
+          "round2_seconds": 0.04363802447915077,
+          "saturated_queries": 2,
+          "suite": "DOTAv2",
+          "task": "detection",
+          "uid": "0"
+        }
+      },
+      "order": [
+        "sequential",
+        "packed"
+      ],
+      "plan_sha256": "c59613ec431d724eee7d9c4d0d830542a582a0b5bde4737d39f610807f8289d7",
+      "suite": "DOTAv2",
+      "uid": "0"
+    }
+  ],
+  "purpose": "Base-weight integration only, not final PID metrics or baseline timing",
+  "synthetic_address_kernel_check": {
+    "packed": {
+      "answers": [
+        {
+          "address_id": "0",
+          "answer": "<ref>ship</ref><box>None</box>",
+          "block_tokens": [
+            151668,
+            4064,
+            151669
+          ],
+          "block_type": "empty_box",
+          "label": "ship"
+        },
+        {
+          "address_id": "1",
+          "answer": "<ref>ship</ref><box>None</box>",
+          "block_tokens": [
+            151668,
+            4064,
+            151669
+          ],
+          "block_type": "empty_box",
+          "label": "ship"
+        },
+        {
+          "address_id": "2",
+          "answer": "<ref>ship</ref><box>None</box>",
+          "block_tokens": [
+            151668,
+            4064,
+            151669
+          ],
+          "block_type": "empty_box",
+          "label": "ship"
+        }
+      ],
+      "stats": {
+        "actual_round2_forwards": 1,
+        "addresses": 3,
+        "cross_round_cache_reuse": true,
+        "effective_wave_sizes": [
+          3
+        ],
+        "end_to_end_seconds": 0.04346150532364845,
+        "global_image_preprocessing_calls": 0,
+        "global_moonvit_encodes": 0,
+        "layout": "packed_all",
+        "local_moonvit_encodes": 0,
+        "model_seconds": 0.0400406401604414,
+        "oom_policy": "raise_without_splitting",
+        "oom_retries": 0,
+        "parallel_width": "all_predicted_addresses",
+        "peak_gpu_mb": 7558.96923828125,
+        "preparation_seconds": 0.003420865163207054,
+        "protocol": "pid_packed_all_v1",
+        "qwen_branch_suffix_forwards": 0,
+        "qwen_fused_prompt_geometry_forwards": 1,
+        "qwen_geometry_forwards": 0,
+        "qwen_global_prefix_forwards": 0,
+        "qwen_total_forwards": 1,
+        "requested_wave_size": 3,
+        "round2_execution": "fused_one_pass",
+        "waves": 1
+      }
+    },
+    "sequential": {
+      "answers": [
+        {
+          "address_id": "0",
+          "answer": "<ref>ship</ref><box>None</box>",
+          "block_tokens": [
+            151668,
+            4064,
+            151669
+          ],
+          "block_type": "empty_box",
+          "label": "ship"
+        },
+        {
+          "address_id": "1",
+          "answer": "<ref>ship</ref><box>None</box>",
+          "block_tokens": [
+            151668,
+            4064,
+            151669
+          ],
+          "block_type": "empty_box",
+          "label": "ship"
+        },
+        {
+          "address_id": "2",
+          "answer": "<ref>ship</ref><box>None</box>",
+          "block_tokens": [
+            151668,
+            4064,
+            151669
+          ],
+          "block_type": "empty_box",
+          "label": "ship"
+        }
+      ],
+      "stats": {
+        "actual_round2_forwards": 3,
+        "addresses": 3,
+        "cross_round_cache_reuse": true,
+        "effective_wave_sizes": [
+          1,
+          1,
+          1
+        ],
+        "end_to_end_seconds": 0.11138393357396126,
+        "global_image_preprocessing_calls": 0,
+        "global_moonvit_encodes": 0,
+        "layout": "sequential_extent",
+        "local_moonvit_encodes": 0,
+        "model_seconds": 0.10841019079089165,
+        "oom_policy": "raise_without_fallback",
+        "oom_retries": 0,
+        "parallel_width": 1,
+        "peak_gpu_mb": 7555.154296875,
+        "preparation_seconds": 0.0029737427830696106,
+        "protocol": "pid_sequential_extent_v1",
+        "qwen_branch_suffix_forwards": 0,
+        "qwen_fused_prompt_geometry_forwards": 3,
+        "qwen_geometry_forwards": 0,
+        "qwen_global_prefix_forwards": 0,
+        "qwen_total_forwards": 3,
+        "requested_wave_size": 1,
+        "round2_execution": "fused_one_pass",
+        "waves": 3
+      }
+    }
+  }
+}

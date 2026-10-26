@@ -1,0 +1,38 @@
+--- a/processing_locateanything.py
++++ b/processing_locateanything.py
+@@ -125,8 +125,28 @@
+     image_obj = None
+     if isinstance(image, Image.Image):
+         image_obj = image
++    elif isinstance(image, dict) and image.get("virtual_crop"):
++        source_path = image.get("path")
++        crop = image.get("crop_xyxy")
++        if not isinstance(source_path, str) or not source_path:
++            raise ValueError("virtual_crop image requires a non-empty 'path'")
++        if not isinstance(crop, (list, tuple)) or len(crop) != 4:
++            raise ValueError("virtual_crop image requires crop_xyxy=[left, top, right, bottom]")
++        if any(isinstance(value, bool) or not isinstance(value, int) for value in crop):
++            raise ValueError(f"virtual_crop coordinates must be integers, got {crop!r}")
++        left, top, right, bottom = crop
++        with Image.open(source_path) as source:
++            width, height = source.size
++            if not (0 <= left < right <= width and 0 <= top < bottom <= height):
++                raise ValueError(
++                    f"virtual_crop is outside source image {source_path}: "
++                    f"crop={crop}, image_size={(width, height)}"
++                )
++            image_obj = source.crop((left, top, right, bottom)).copy()
+     elif isinstance(image, dict) and 'lmdb_file' in image:
+         image_obj = parse_lmdb_image_data(image)
++    elif isinstance(image, dict):
++        raise ValueError(f"Unrecognized dictionary image input: {image}")
+     elif image.startswith("http://") or image.startswith("https://"):
+         response = requests.get(image, stream=True)
+         image_obj = Image.open(BytesIO(response.content))
+@@ -675,4 +695,4 @@
+             return processor
+         
+         
+-__all__ = ["LocateAnythingProcessor"]
+\ No newline at end of file
++__all__ = ["LocateAnythingProcessor"]

@@ -1,0 +1,111 @@
+{
+  "repo": "CaseStudyRef/RefWave-Cluster-Runs",
+  "revision": "266d967359913eeaa9e184651e787b67341d744b",
+  "checkpoint": {
+    "run": "class_isolated_full_8gpu_s1e2_s2e2_both_both_ft_ciso_ep2_v32_20260917T115718Z_TvBPX9",
+    "sha256": "eb662db4078042c39eb55b8d8760472bb053fc4d372c87ec613426a9e8750185",
+    "bytes": 42216772310,
+    "step": 1246,
+    "parent_sha256": "a4462be8d4fce6832cdfd8789c4f1c95bc0dc5f99a60943a99470f18c1a6f86d"
+  },
+  "stages": {
+    "stage1": {
+      "records": 116386,
+      "epochs": 2,
+      "steps": 7276,
+      "training_rows": 7276,
+      "validation_rows": 26,
+      "selected_step": 7276,
+      "selected_macro_loss": 0.534111795479023,
+      "last_macro_loss": 0.534111795479023,
+      "observed_nonfinite_values": 0,
+      "direct_only_logged_objective": true
+    },
+    "stage2": {
+      "records": 39851,
+      "epochs": 2,
+      "steps": 2492,
+      "training_rows": 2492,
+      "validation_rows": 10,
+      "selected_step": 1246,
+      "selected_macro_loss": 0.514839234374688,
+      "last_macro_loss": 0.5310223354599268,
+      "observed_nonfinite_values": 0,
+      "direct_only_logged_objective": true
+    }
+  },
+  "full_trainable_parameters": 3517975280,
+  "data_hashes": {
+    "stage1": "2fd6c5e8df294d968fbe5b1381fadc5eeb795ea3b1fc1848627e480064c8ae52",
+    "stage2": "c5d0e3156f2c3d55f9fddc573fcbdeedb5a1427ae80314b2fc45fb37ee140bd7",
+    "validation": "00e14c17087bfb8bddd4299b3f3d663138658783d200c3534a4bacd57ea58a91"
+  },
+  "matched_recipe_fields": {
+    "refwave": [
+      "tuning",
+      "epochs",
+      "records",
+      "steps",
+      "global_batch",
+      "world_size",
+      "batch_size",
+      "accumulation",
+      "batch_tokens",
+      "max_sequence",
+      "image_token_limit",
+      "seed",
+      "learning_rate",
+      "head_lr",
+      "vision_lr",
+      "projector_lr",
+      "warmup_ratio",
+      "train_sha256",
+      "validation_sha256",
+      "validation_records",
+      "trainable",
+      "optimizer_sharding",
+      "synchronized_trainable_initialization"
+    ],
+    "standard": [
+      "tuning",
+      "epochs",
+      "records",
+      "steps",
+      "global_batch",
+      "world_size",
+      "batch_size",
+      "accumulation",
+      "batch_tokens",
+      "max_sequence",
+      "image_token_limit",
+      "seed",
+      "learning_rate",
+      "head_lr",
+      "vision_lr",
+      "projector_lr",
+      "warmup_ratio",
+      "train_sha256",
+      "validation_sha256",
+      "validation_records",
+      "trainable",
+      "optimizer_sharding",
+      "synchronized_trainable_initialization"
+    ]
+  },
+  "source_hashes": {
+    "stage1/config.json": "0f9fb11e6af76c456f2c07af2a9dbb7461bc36e779023e1bcd717776e72ea65d",
+    "stage1/done.json": "9d99a8cfba2717c9f1da99837c2f33feea7038ada40361de02c8f5d7c1ebd1e3",
+    "stage1/validation_curve.jsonl": "407a795b1bd5df85b965b37bc179b1560b979ee70a3aab595bd38968d4ab0bed",
+    "stage1/training_curve.jsonl": "d8e5c852feb62bc82d327b3d3fdbfe2dcf3a8b09ebd5c16f0e57006ded8f06df",
+    "stage2/config.json": "bf1b9b7aef4ae84f5c50fcd336638760c3ece4b1f442426a87a8dd80d5d1b0e2",
+    "stage2/done.json": "61116e4c5ad3abcf4a1089dac0a4a70b7670144cf2dea06f9cf834931c358609",
+    "stage2/validation_curve.jsonl": "d82323d410249c9c86c0fec8a9472f802686b41d923b3b3531d46300525d2596",
+    "stage2/training_curve.jsonl": "df0d53828dc651bcffec7b3da59f575a56f4cbcaf34f2905f69c50837d3ff40e"
+  },
+  "limitations": [
+    "Logs/configs establish recorded execution, not semantic correctness of every annotation.",
+    "No executed training-source snapshot was supplied; exact remote implementation is not independently proven.",
+    "The full weight file and GPU inference are verified on the evaluation machine before full evaluation.",
+    "Matched source episodes and optimizer schedule do not equate supervised token counts across formulations."
+  ]
+}

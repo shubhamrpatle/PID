@@ -31,3 +31,10 @@ tools/extract_inference.py
 
 # Local acceptance reports; not part of the release.
 reports/
+
+# Downloaded at a pinned NVlabs/Eagle commit by prepare.py; never redistributed here.
+paper_evaluation/LA-Rex-Protocol-Eval-v3/evidence/other_metric.py
+paper_evaluation/LA-Rex-Protocol-Eval-v3/evidence/inference_grounding_ddp.py
+
+# Built locally by paper_evaluation/prepare_model_runtime.py from nvidia/LocateAnything-3B.
+paper_evaluation/Final-Controls-Eval/workspace/Zero_shot_ anlysis_LA/model/

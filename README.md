@@ -55,6 +55,15 @@ training hashes above.
 frozen into the plans of the evaluation runs that produced the paper's detection,
 efficiency and ablation results.
 
+## Evaluation
+
+[`paper_evaluation/`](paper_evaluation/README.md) holds the code that scored the
+paper's results under the frozen protocol: detection, grounding and pointing, the
+paired sequential/packed efficiency comparison, the class-isolated control, and the
+address ablation. Every source file there is byte-identical to the version that ran.
+`evaluate.sh` in this directory generates predictions from a trained checkpoint;
+`paper_evaluation/` is what produced the reported numbers.
+
 ## Repository notes
 
 A standalone training repository for HBB detection and phrase grounding.

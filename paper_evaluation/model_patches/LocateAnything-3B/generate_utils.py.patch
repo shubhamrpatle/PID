@@ -1,0 +1,140 @@
+--- a/generate_utils.py
++++ b/generate_utils.py
+@@ -192,6 +192,130 @@
+     return probs, confidence, x0, box_avg
+ 
+ 
++def _safe_prob_value(value) -> float:
++    if hasattr(value, "detach"):
++        return float(value.detach().float().cpu().item())
++    return float(value)
++
++
++def _geom_score(values, eps: float = 1e-12):
++    if not values:
++        return 0.0
++    total = None
++    for value in values:
++        clipped = torch.clamp(value.float(), min=eps)
++        total = clipped.log() if total is None else total + clipped.log()
++    return torch.exp(total / len(values))
++
++
++def _best_coord_ids_and_probs(probs, token_ids: Dict[str, int], positions, keep_k: int = 5):
++    coord_start_token_id = token_ids['coord_start_token_id']
++    coord_end_token_id = token_ids['coord_end_token_id']
++    ids = []
++    vals = []
++    for pos in positions:
++        pos_probs, pos_ids = torch.topk(probs[pos], k=keep_k, dim=-1)
++        mask = (pos_ids >= coord_start_token_id) & (pos_ids <= coord_end_token_id)
++        if not mask.any():
++            return None, None
++        first_valid_idx = mask.long().argmax(dim=-1)
++        ids.append(pos_ids[first_valid_idx])
++        vals.append(pos_probs[first_valid_idx])
++    return ids, vals
++
++
++def score_pbd_blocks(probs, token_ids: Dict[str, int], keep_k: int = 5) -> Dict[str, float]:
++    """Estimate block-level evidence from one 6-position PBD probability window.
++
++    LocateAnything does not have a separate block classifier. Block types are
++    encoded by token patterns, so these scores are lightweight approximations
++    built from the same token probabilities the baseline decoder already uses.
++    They are used only by explicit PBDA decoding mode.
++    """
++
++    box_start_token_id = token_ids['box_start_token_id']
++    box_end_token_id = token_ids['box_end_token_id']
++    none_token_id = token_ids['none_token_id']
++    null_token_id = token_ids['null_token_id']
++    im_end_token_id = token_ids['im_end_token_id']
++    ref_start_token_id = token_ids.get('ref_start_token_id')
++
++    coord4_ids, coord4_probs = _best_coord_ids_and_probs(probs, token_ids, [1, 2, 3, 4], keep_k=keep_k)
++    coord2_ids, coord2_probs = _best_coord_ids_and_probs(probs, token_ids, [1, 2], keep_k=keep_k)
++
++    end_score = torch.maximum(probs[0, null_token_id], probs[0, im_end_token_id])
++    negative_score = _geom_score([probs[0, box_start_token_id], probs[1, none_token_id], probs[2, box_end_token_id]])
++    semantic_score = probs[0, ref_start_token_id] if ref_start_token_id is not None else probs.new_tensor(0.0)
++
++    if coord4_probs is not None:
++        box_end_score = probs[5, box_end_token_id]
++        box_score = _geom_score([probs[0, box_start_token_id], *coord4_probs, box_end_score])
++    else:
++        box_score = probs.new_tensor(0.0)
++
++    if coord4_probs is not None:
++        # Detection prompts usually make positions 1-4 look like a weak box, not
++        # native point syntax.  For PBDA, point evidence is therefore the
++        # coordinate evidence itself rather than requiring position 3 to already
++        # be </box>.
++        point_score = _geom_score([probs[0, box_start_token_id], *coord4_probs])
++    elif coord2_probs is not None:
++        point_score = _geom_score([probs[0, box_start_token_id], *coord2_probs])
++    else:
++        point_score = probs.new_tensor(0.0)
++
++    return {
++        "semantic": _safe_prob_value(semantic_score),
++        "point": _safe_prob_value(point_score),
++        "box": _safe_prob_value(box_score),
++        "negative": _safe_prob_value(negative_score),
++        "end": _safe_prob_value(end_score),
++    }
++
++
++def decode_point_avg(
++    logits,
++    probs,
++    token_ids: Dict[str, int],
++    keep_k=5,
++    start_thresh=0.35,
++    end_thresh=0.15,
++):
++    """Decode a two-coordinate point block: <box><x><y></box>."""
++
++    box_start_token_id = token_ids['box_start_token_id']
++    box_end_token_id = token_ids['box_end_token_id']
++    device = probs.device
++
++    if probs[0, box_start_token_id] < start_thresh:
++        return None
++    coord4_ids, coord4_probs = _best_coord_ids_and_probs(probs, token_ids, [1, 2, 3, 4], keep_k=keep_k)
++    if coord4_ids is not None:
++        # LA box text is parsed project-wide as <x1><y1><x2><y2>; use the
++        # coordinate center as the point fallback.
++        coord_start_token_id = token_ids['coord_start_token_id']
++        x1 = int(coord4_ids[0].item()) - coord_start_token_id
++        y1 = int(coord4_ids[1].item()) - coord_start_token_id
++        x2 = int(coord4_ids[2].item()) - coord_start_token_id
++        y2 = int(coord4_ids[3].item()) - coord_start_token_id
++        cx = max(0, min(1000, int(round((x1 + x2) / 2.0))))
++        cy = max(0, min(1000, int(round((y1 + y2) / 2.0))))
++        point_ids = [
++            torch.tensor(coord_start_token_id + cx, dtype=coord4_ids[0].dtype, device=device),
++            torch.tensor(coord_start_token_id + cy, dtype=coord4_ids[0].dtype, device=device),
++        ]
++    else:
++        if probs[3, box_end_token_id] < end_thresh:
++            return None
++        coord_ids, coord_probs = _best_coord_ids_and_probs(probs, token_ids, [1, 2], keep_k=keep_k)
++        if coord_ids is None:
++            return None
++        point_ids = coord_ids
++    start_t = torch.tensor([box_start_token_id], dtype=point_ids[0].dtype, device=device)
++    end_t = torch.tensor([box_end_token_id], dtype=point_ids[0].dtype, device=device)
++    return torch.cat([start_t, torch.stack(point_ids), end_t])
++
++
+ def sample_tokens_ar(
+     logits: torch.Tensor,
+     generated: torch.Tensor,
+@@ -501,4 +625,4 @@
+             "tokens": x0,
+             "need_switch_to_ar": False,
+             "is_terminal": False,
+-        }
+\ No newline at end of file
++        }

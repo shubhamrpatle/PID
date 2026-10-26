@@ -1,0 +1,500 @@
+--- a/modeling_locateanything.py
++++ b/modeling_locateanything.py
+@@ -26,9 +26,11 @@
+ from .configuration_qwen2 import Qwen2Config
+ 
+ from .generate_utils import (
++    decode_point_avg,
+     sample_tokens,
+     handle_pattern,
+     get_token_ids_from_config,
++    score_pbd_blocks,
+ )
+ 
+ logger = logging.get_logger(__name__)
+@@ -131,11 +133,20 @@
+ 
+         vit_hidden_size = config.vision_config.hidden_size
+         llm_hidden_size = config.text_config.hidden_size
+-
+-        # MLP for moonvit (without pixel_shuffle_back, direct mapping)
++        merge_kernel_size = getattr(config.vision_config, "merge_kernel_size", [2, 2])
++        if isinstance(merge_kernel_size, int):
++            merge_kernel_size = [merge_kernel_size, merge_kernel_size]
++        if len(merge_kernel_size) != 2:
++            raise ValueError(f"Expected 2D merge_kernel_size, got {merge_kernel_size}")
++        merged_vit_hidden_size = vit_hidden_size * int(merge_kernel_size[0]) * int(merge_kernel_size[1])
++
++        # MLP for moonvit (without pixel_shuffle_back, direct mapping).
++        # The input width must match MoonViT's configured spatial patch merger:
++        # [2, 2] keeps the original 4-token concatenation, while [1, 1]
++        # enables the no-merge projector experiment.
+         self.mlp1 = nn.Sequential(
+-                nn.LayerNorm(vit_hidden_size*4),
+-                nn.Linear(vit_hidden_size*4, llm_hidden_size),
++                nn.LayerNorm(merged_vit_hidden_size),
++                nn.Linear(merged_vit_hidden_size, llm_hidden_size),
+                 nn.GELU(),
+                 nn.Linear(llm_hidden_size, llm_hidden_size)
+             )
+@@ -315,6 +326,7 @@
+     ) -> torch.LongTensor:
+ 
+         verbose = generate_kwargs.pop('verbose', False)
++        return_debug_info = generate_kwargs.pop('return_debug_info', False)
+         start_time = time.time()
+         prefill_time = None
+ 
+@@ -351,8 +363,27 @@
+         generation_mode = generate_kwargs.get('generation_mode', 'hybrid')
+         assert generation_mode in ('fast', 'slow', 'hybrid'), \
+             f"Unsupported generation_mode='{generation_mode}'. Use 'fast', 'slow', or 'hybrid'."
++        decode_mode = generate_kwargs.get('decode_mode', 'baseline')
++        assert decode_mode in ('baseline', 'pbda'), \
++            f"Unsupported decode_mode='{decode_mode}'. Use 'baseline' or 'pbda'."
+ 
+         sampling_history = []
++        pbda_stats = {
++            "decode_mode": decode_mode,
++            "semantic_blocks": 0,
++            "box_blocks": 0,
++            "point_blocks": 0,
++            "negative_blocks": 0,
++            "end_blocks": 0,
++            "end_accepted_immediately": 0,
++            "end_delayed": 0,
++            "negative_accepted_immediately": 0,
++            "negative_delayed": 0,
++            "point_to_box_refinements": 0,
++            "inconsistent_point_box_pairs": 0,
++            "block_scores": [],
++        }
++        pending_point_token = None
+ 
+ 
+         use_mtp = generation_mode in ('fast', 'hybrid')
+@@ -370,12 +401,34 @@
+         full_position_ids = torch.arange(0, max_possible_len, device=generated.device).unsqueeze(0)
+ 
+ 
+-        def _prepare_inputs_in_mtp(generated):
++        def _expand_past_for_wave(values, wave_size):
++            if values is None or wave_size == 1:
++                return values
++            return tuple(
++                tuple(
++                    tensor.expand(wave_size, *tensor.shape[1:]).contiguous()
++                    for tensor in layer
++                )
++                for layer in values
++            )
++
++
++        def _prepare_inputs_in_mtp(generated, wave_size=1):
++            wave_generated = (
++                generated
++                if wave_size == 1
++                else generated.expand(wave_size, -1).contiguous()
++            )
++            wave_masks = (
++                pre_mask_tokens
++                if wave_size == 1
++                else pre_mask_tokens.expand(wave_size, -1)
++            )
+             generated_with_mask = torch.cat(
+                 (
+-                    generated, 
+-                    generated[:, -1].unsqueeze(1),
+-                    pre_mask_tokens
++                    wave_generated,
++                    wave_generated[:, -1].unsqueeze(1),
++                    wave_masks
+                 ), 
+                 dim=1
+             ) # [batch_size, seq_len + 1 +  n_future_tokens - 1]
+@@ -383,17 +436,19 @@
+             # Update pe for kvcache
+             start_idx = past_key_values[0][0].size(2) if past_key_values is not None else 0
+             position_ids = full_position_ids[:, start_idx : generated_with_mask.size(1)].clone()
+-            position_ids[0, -n_future_tokens:] -= 1
++            if wave_size > 1:
++                position_ids = position_ids.expand(wave_size, -1).contiguous()
++            position_ids[:, -n_future_tokens:] -= 1
+ 
+             prepare_inputs = self.language_model.prepare_inputs_for_generation(
+                 generated_with_mask,
+-                past_key_values,
++                _expand_past_for_wave(past_key_values, wave_size),
+                 None,
+                 inputs_embeds=None,
+                 use_cache=True,
+                 position_ids=position_ids
+             )
+-            return prepare_inputs
++            return prepare_inputs, wave_generated
+ 
+ 
+         def _prepare_input_in_ar(generated):
+@@ -413,6 +468,16 @@
+         def _sample_token_in_mtp(generated, outputs):
+             """Sample tokens using MTP (Multi-Token Prediction) mode."""
+             next_token_logits = outputs.logits[:, -n_future_tokens:, :]
++            localization_controller = getattr(
++                self, '_pivr_generation_controller', None
++            )
++            if (
++                localization_controller is not None
++                and hasattr(localization_controller, 'adjust_pbd_logits')
++            ):
++                next_token_logits = localization_controller.adjust_pbd_logits(
++                    next_token_logits
++                )
+             probs, confidence, x0, box_avg = sample_tokens(
+                 next_token_logits, generated, self.token_ids, keep_k=5, **generate_kwargs
+             )
+@@ -427,6 +492,192 @@
+             return out_type, out_token
+ 
+ 
++        def _sample_parallel_geometry_wave(generated, outputs, wave_size):
++            """Decode one learned wave and serialize accepted native PBD6 boxes."""
++            next_token_logits = outputs.logits[:, -n_future_tokens:, :]
++            probs, confidence, x0, box_avg = sample_tokens(
++                next_token_logits,
++                generated.expand(wave_size, -1),
++                self.token_ids,
++                keep_k=5,
++                **generate_kwargs,
++            )
++            del probs, confidence
++            accepted_tokens = []
++            accepted_indices = []
++            seen = set()
++            fallback = None
++            for branch in range(wave_size):
++                is_box_empty = (box_avg[branch] == 0).all()
++                candidate = x0[branch] if is_box_empty else box_avg[branch]
++                pattern = handle_pattern(candidate, self.token_ids, generation_mode)
++                token = torch.tensor(
++                    pattern['tokens'], dtype=x0.dtype, device=x0.device
++                )
++                if branch == 0:
++                    fallback = (pattern['type'], token)
++                if pattern['type'] != 'coord_box':
++                    continue
++                identity = tuple(int(value) for value in token.tolist())
++                if identity in seen:
++                    continue
++                seen.add(identity)
++                accepted_indices.append(branch)
++                accepted_tokens.append(token)
++            if accepted_tokens:
++                return (
++                    'coord_box',
++                    torch.cat(accepted_tokens, dim=0),
++                    accepted_indices,
++                )
++            if fallback is None:
++                raise RuntimeError('Adaptive PIVR wave produced no decodable branch')
++            return fallback[0], fallback[1], []
++
++
++        def _coord_token_to_value(token):
++            coord_start_token_id = self.token_ids['coord_start_token_id']
++            coord_end_token_id = self.token_ids['coord_end_token_id']
++            token_val = int(token.item() if hasattr(token, "item") else token)
++            if coord_start_token_id <= token_val <= coord_end_token_id:
++                return token_val - coord_start_token_id
++            return None
++
++
++        def _point_inside_box_tokens(point_token, box_token):
++            if point_token is None or box_token is None or len(point_token) < 4 or len(box_token) < 6:
++                return None
++            px = _coord_token_to_value(point_token[1])
++            py = _coord_token_to_value(point_token[2])
++            x1 = _coord_token_to_value(box_token[1])
++            y1 = _coord_token_to_value(box_token[2])
++            x2 = _coord_token_to_value(box_token[3])
++            y2 = _coord_token_to_value(box_token[4])
++            if None in (px, py, x1, y1, x2, y2):
++                return None
++            left, right = sorted((x1, x2))
++            top, bottom = sorted((y1, y2))
++            return left <= px <= right and top <= py <= bottom
++
++
++        def _record_pbda_block(out_type, out_token, block_scores=None):
++            nonlocal pending_point_token
++            if block_scores is not None and generate_kwargs.get('pbda_log_scores', False):
++                pbda_stats["block_scores"].append(block_scores)
++            if out_type == 'ref_object':
++                pbda_stats["semantic_blocks"] += 1
++            elif out_type == 'coord_box':
++                pbda_stats["box_blocks"] += 1
++                if pending_point_token is not None:
++                    pbda_stats["point_to_box_refinements"] += 1
++                    inside = _point_inside_box_tokens(pending_point_token, out_token)
++                    if inside is False:
++                        pbda_stats["inconsistent_point_box_pairs"] += 1
++                    pending_point_token = None
++            elif out_type == 'point_box':
++                pbda_stats["point_blocks"] += 1
++                pending_point_token = out_token.detach().clone()
++            elif out_type == 'empty_box':
++                pbda_stats["negative_blocks"] += 1
++            elif out_type == 'im_end':
++                pbda_stats["end_blocks"] += 1
++
++
++        def _sample_token_in_pbda(generated, outputs):
++            """PBDA policy over the same 6-token PBD window used by baseline."""
++            next_token_logits = outputs.logits[:, -n_future_tokens:, :]
++            localization_controller = getattr(
++                self, '_pivr_generation_controller', None
++            )
++            if (
++                localization_controller is not None
++                and hasattr(localization_controller, 'adjust_pbd_logits')
++            ):
++                next_token_logits = localization_controller.adjust_pbd_logits(
++                    next_token_logits
++                )
++            probs, confidence, x0, box_avg = sample_tokens(
++                next_token_logits, generated, self.token_ids, keep_k=5, **generate_kwargs
++            )
++
++            is_box_empty = (box_avg[0] == 0).all()
++            baseline_tokens = x0[0] if is_box_empty else box_avg[0]
++            baseline_pattern = handle_pattern(baseline_tokens, self.token_ids, generation_mode)
++            baseline_type = baseline_pattern['type']
++            baseline_token = torch.tensor(baseline_pattern['tokens'], dtype=x0.dtype, device=x0.device)
++
++            block_scores = score_pbd_blocks(
++                probs[0],
++                self.token_ids,
++                keep_k=generate_kwargs.get('keep_k_avg', 4),
++            )
++            end_margin = float(generate_kwargs.get('end_margin', 0.10))
++            neg_margin = float(generate_kwargs.get('neg_margin', 0.10))
++            min_point_conf = float(generate_kwargs.get('min_point_conf', 0.20))
++            min_box_conf = float(generate_kwargs.get('min_box_conf', 0.20))
++            max_boxes = int(generate_kwargs.get('max_boxes', 1000000))
++            max_point_box_pairs = int(generate_kwargs.get('max_point_box_pairs', 1000000))
++
++            if pbda_stats["box_blocks"] >= max_boxes:
++                out_token = torch.tensor([self.token_ids['im_end_token_id']], dtype=x0.dtype, device=x0.device)
++                _record_pbda_block('im_end', out_token, block_scores)
++                return 'im_end', out_token
++
++            # Preserve semantic/ref generation; PBDA should not invent labels.
++            if baseline_type == 'ref_object':
++                _record_pbda_block(baseline_type, baseline_token, block_scores)
++                return baseline_type, baseline_token
++
++            max_continue = max(block_scores["point"], block_scores["box"], block_scores["semantic"])
++            max_localize = max(block_scores["point"], block_scores["box"])
++
++            if baseline_type == 'im_end':
++                if block_scores["end"] - max_continue > end_margin:
++                    pbda_stats["end_accepted_immediately"] += 1
++                    _record_pbda_block(baseline_type, baseline_token, block_scores)
++                    return baseline_type, baseline_token
++                pbda_stats["end_delayed"] += 1
++
++            if baseline_type == 'empty_box':
++                if block_scores["negative"] - max_localize > neg_margin:
++                    pbda_stats["negative_accepted_immediately"] += 1
++                    _record_pbda_block(baseline_type, baseline_token, block_scores)
++                    return baseline_type, baseline_token
++                pbda_stats["negative_delayed"] += 1
++
++            if (not is_box_empty) and block_scores["box"] >= min_box_conf:
++                box_pattern = handle_pattern(box_avg[0], self.token_ids, generation_mode)
++                if box_pattern["type"] == "coord_box":
++                    out_token = torch.tensor(box_pattern['tokens'], dtype=x0.dtype, device=x0.device)
++                    _record_pbda_block('coord_box', out_token, block_scores)
++                    return 'coord_box', out_token
++
++            if (
++                block_scores["point"] >= min_point_conf
++                and block_scores["point"] >= block_scores["box"]
++                and pbda_stats["point_to_box_refinements"] + pbda_stats["point_blocks"] < max_point_box_pairs
++            ):
++                point_token = decode_point_avg(
++                    next_token_logits[0],
++                    probs[0],
++                    self.token_ids,
++                    keep_k=generate_kwargs.get('keep_k_avg', 4),
++                    start_thresh=generate_kwargs.get('point_start_thresh', 0.25),
++                    end_thresh=generate_kwargs.get('point_end_thresh', 0.10),
++                )
++                if point_token is not None:
++                    out_pattern = handle_pattern(point_token, self.token_ids, generation_mode)
++                    if out_pattern["type"] == "point_box":
++                        out_token = torch.tensor(out_pattern['tokens'], dtype=x0.dtype, device=x0.device)
++                        _record_pbda_block('point_box', out_token, block_scores)
++                        return 'point_box', out_token
++
++            # If End/None was delayed but no usable point/box exists, continue with
++            # the baseline decision to avoid non-terminating loops.
++            _record_pbda_block(baseline_type, baseline_token, block_scores)
++            return baseline_type, baseline_token
++
++
+         def _sample_token_in_ar(generated, outputs):
+             """Sample a single token using AR (Auto-Regressive) mode."""
+             next_token_logits = outputs.logits[:, -1:, :]
+@@ -461,16 +712,38 @@
+ 
+ 
+         # Generate loop
++        previous_out_type = None
+         while generated.size(1) < total_gen_length:
+             iter_round += 1
+ 
++            localization_controller = getattr(
++                self, '_pivr_generation_controller', None
++            )
++            wave_size = 1
++            if (
++                use_mtp
++                and previous_out_type == 'coord_box'
++                and past_key_values is not None
++                and localization_controller is not None
++                and hasattr(localization_controller, 'requested_parallel_wave_size')
++            ):
++                wave_size = int(
++                    localization_controller.requested_parallel_wave_size()
++                )
++                if wave_size > 1:
++                    localization_controller.begin_parallel_wave(wave_size)
++            needs_visual_features = past_key_values is None
++
+             # Step 1: Prepare inputs
+             if use_mtp:
+-                prepare_inputs = _prepare_inputs_in_mtp(generated)
++                prepare_inputs, sampling_generated = _prepare_inputs_in_mtp(
++                    generated, wave_size
++                )
+             else:
+                 prepare_inputs = _prepare_input_in_ar(generated)
++                sampling_generated = generated
+ 
+-            if iter_round == 1:
++            if needs_visual_features:
+                 prepare_inputs.update({
+                     'visual_features': vit_embeds,
+                     'image_token_index': self.config.image_token_index,
+@@ -480,21 +753,63 @@
+             with torch.no_grad():
+                 outputs = self.language_model(**prepare_inputs)
+ 
+-            past_key_values = tuple(
+-                (kv[0][:, :, :generated.shape[1], :], kv[1][:, :, :generated.shape[1], :])
+-                for kv in outputs.past_key_values
+-            )
++            if wave_size == 1:
++                past_key_values = tuple(
++                    (kv[0][:, :, :generated.shape[1], :], kv[1][:, :, :generated.shape[1], :])
++                    for kv in outputs.past_key_values
++                )
+ 
+             # Step 3: Sample tokens
+-            if use_mtp:
+-                out_type, out_token = _sample_token_in_mtp(generated, outputs)
++            accepted_wave_indices = []
++            if use_mtp and wave_size > 1:
++                out_type, out_token, accepted_wave_indices = (
++                    _sample_parallel_geometry_wave(
++                        sampling_generated, outputs, wave_size
++                    )
++                )
++                # The branch KV tensors cannot represent the canonical sequence
++                # containing every accepted box. Rebuild only Qwen's prefix cache
++                # next round; the single MoonViT feature extraction stays cached.
++                past_key_values = None
++            elif use_mtp:
++                if decode_mode == 'pbda':
++                    out_type, out_token = _sample_token_in_pbda(generated, outputs)
++                else:
++                    out_type, out_token = _sample_token_in_mtp(generated, outputs)
+             else:
+                 out_type, out_token = _sample_token_in_ar(generated, outputs)
++                if decode_mode == 'pbda':
++                    _record_pbda_block(out_type, out_token)
++
++            if localization_controller is not None and bool(
++                getattr(
++                    localization_controller,
++                    'integrated_generation_observer',
++                    False,
++                )
++            ):
++                if accepted_wave_indices and hasattr(
++                    localization_controller, 'observe_generated_wave'
++                ):
++                    localization_controller.observe_generated_wave(
++                        accepted_wave_indices
++                    )
++                else:
++                    if hasattr(localization_controller, 'postprocess_generated_block'):
++                        out_type, out_token = (
++                            localization_controller.postprocess_generated_block(
++                                out_type, out_token
++                            )
++                        )
++                    localization_controller.observe_generated_block(
++                        out_type, out_token
++                    )
+ 
+             if verbose:
+                 sampling_history.append(('ar' if 'ar' in out_type else 'mtp', tokenizer.decode(out_token, skip_special_tokens=False)))
+ 
+             generated = torch.cat([generated, out_token.unsqueeze(0)], dim=1)
++            previous_out_type = out_type
+ 
+             # Step 4: Mode switching & termination
+             if out_type == 'im_end':
+@@ -515,13 +830,26 @@
+         # Decode and return
+         generated_ids = generated[:, seq_len:]
+         response = tokenizer.batch_decode(generated_ids, skip_special_tokens=False)
++        end_time = time.time()
++        num_tokens = generated_ids.size(1)
++        num_boxes = response[0].count("<box>")
++        total_time = end_time - start_time
++        stats_dict = {
++            "decode_mode": decode_mode,
++            "generation_mode": generation_mode,
++            "tokens_generated": int(num_tokens),
++            "num_boxes_text": int(num_boxes),
++            "generate_time_s": float(total_time),
++            "tokens_per_second": float(num_tokens / total_time) if total_time > 0 else 0.0,
++            "forward_steps": int(iter_round),
++            "boxes_per_second": float(num_boxes / total_time) if total_time > 0 else 0.0,
++            "prefill_time_s": float(prefill_time) if prefill_time is not None else None,
++            "switch_to_ar": int(switch_to_ar_count),
++        }
++        if decode_mode == 'pbda':
++            stats_dict.update(pbda_stats)
+ 
+         if verbose:
+-            end_time = time.time()
+-            num_tokens = generated_ids.size(1)
+-            num_boxes = response[0].count("<box>")
+-            total_time = end_time - start_time
+-
+             out_info =  f"\nStatistic Info, num_tokens={num_tokens}; " + \
+                     f"generate_time(s)={total_time:.4f}; " + \
+                     f"tps={(num_tokens / total_time):.4f}; " + \
+@@ -534,4 +862,7 @@
+ 
+             return response[0], sampling_history, out_info
+ 
+-        return response[0]
+\ No newline at end of file
++        if return_debug_info:
++            return response[0], sampling_history, stats_dict
++
++        return response[0]

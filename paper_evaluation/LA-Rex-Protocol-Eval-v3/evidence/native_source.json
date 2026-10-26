@@ -1,0 +1,5 @@
+{
+  "revision": "783f656d127ee498137b5ff52603ce36c292d317",
+  "sha256": "0a08b029a2633b6293eb0428a806c08041a352e497a917fea84d32d6472c40ac",
+  "url": "https://raw.githubusercontent.com/NVlabs/Eagle/783f656d127ee498137b5ff52603ce36c292d317/Embodied/evaluation/inference_grounding_ddp.py"
+}
