@@ -97,8 +97,7 @@ cd PID
 
 Run the following commands from the cloned `PID/` directory. The code and
 Python environment stay here; downloaded images, model weights and training
-outputs go in the separate `WORK_ROOT` directory selected in step 2. If the
-repository is private, your GitHub account must have access before cloning.
+outputs go in the separate `WORK_ROOT` directory selected in step 2.
 
 Choose **one** environment method. No test or data-audit step is required.
 
