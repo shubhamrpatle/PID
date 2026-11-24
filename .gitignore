@@ -10,6 +10,8 @@ dist/
 *.log
 wandb/
 assets/
+# README figures, tables and logos are part of the release.
+!/assets/
 runs/
 *.pt
 *.safetensors
