@@ -119,22 +119,19 @@ incremental download. Do not download only the update onto an empty machine.
 ## Start a Fresh Run
 
 Use an allocated GPU node; choose 1-8 GPUs on that node. These commands do not
-reserve GPUs or stop other jobs. Use one of the following commands, not all
-three simultaneously on the same GPU allocation:
+reserve GPUs or stop other jobs. Use one of the following commands, not both
+simultaneously on the same GPU allocation:
 
 ```bash
 unset RUN_ROOT CONTINUE_FROM
 export RECORDS_DIR="$DATA_ROOT/refwave_v2_cod"
 export STAGE1_EPOCHS=1 STAGE2_EPOCHS=1
 
-# RefWave LoRA
-WANDB_MODE=online bash train_lora.sh 8 both
-
-# Alternatively: matched standard direct-box LoRA
-METHOD=standard WANDB_MODE=online bash train_lora.sh 8 both
-
-# Alternatively: RefWave full-parameter training
+# RefWave
 WANDB_MODE=online bash train_full.sh 8 both
+
+# Alternatively: matched standard direct-box control
+METHOD=standard WANDB_MODE=online bash train_full.sh 8 both
 ```
 
 The launcher derives coverage from the new file length and selected epoch count;

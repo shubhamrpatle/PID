@@ -10,8 +10,7 @@ import torch
 
 
 @pytest.mark.parametrize("method,tuning", [
-    ("refwave", "lora"), ("standard", "lora"), ("refwave", "full"),
-    ("class_isolated", "lora"), ("class_isolated", "full"),
+    ("refwave", "full"), ("standard", "full"), ("class_isolated", "full"),
 ])
 def test_four_rank_start_stop_resume_and_stage_handoff(tmp_path, method, tuning):
     (tmp_path / "records.jsonl").write_text("{}\n" * 7)

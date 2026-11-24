@@ -24,15 +24,13 @@ It is not a pure compute-matched or supervised-token-matched ablation: direct
 outputs retain native reference tags, and RefWave has two supervised routes.
 Do not claim a benefit until the matched checkpoints have been evaluated.
 
-All full modes train MoonViT, projector, Qwen and head. Keep the same batch,
+All models are fully fine-tuned: MoonViT, projector, Qwen and head are trained. Keep the same batch,
 accumulation, learning rates, epochs and seed across controls. Each method selects
 its own Stage-1 best validation-loss checkpoint as the Stage-2 parent; Stage 2
 uses a fresh optimizer. Validation-loss values across different objectives are
 not directly comparable. Compare generated results on the same evaluation set.
 
-LoRA modes instead train Qwen LoRA plus the complete LM head, with the same
-rank (default 32); vision and projector are frozen. Compare LoRA to LoRA or
-full to full, not one tuning scope to another. Both stages select by the minimum
+Both stages select by the minimum
 `detection_grounding_macro_loss` on the same validation records, at the same
 evaluation interval (default 300 updates) and epoch boundaries. Stage 2 starts
 from its own method's Stage-1 `best.pt`, not RefWave's checkpoint for both methods.
@@ -46,14 +44,13 @@ Use identical epoch, batch, accumulation, seed and learning-rate overrides for
 the two methods. Clear `RUN_ROOT` and `CONTINUE_FROM` for fresh runs.
 
 ```bash
-# LoRA control:
-RUN_ROOT= CONTINUE_FROM= METHOD=class_isolated WANDB_MODE=online bash train_lora.sh 8 both
-# Matched RefWave LoRA, in its own allocation:
-RUN_ROOT= CONTINUE_FROM= METHOD=refwave WANDB_MODE=online bash train_lora.sh 8 both
+# Class-isolated control:
+RUN_ROOT= CONTINUE_FROM= METHOD=class_isolated WANDB_MODE=online bash train_full.sh 8 both
+# Matched RefWave, in its own allocation:
+RUN_ROOT= CONTINUE_FROM= METHOD=refwave WANDB_MODE=online bash train_full.sh 8 both
 ```
 
-For full-parameter training use `train_full.sh` for **both** commands. Replace
-8 with the allocated GPU count for both jobs. Record hashes, global batch,
+Replace 8 with the allocated GPU count for both jobs. Record hashes, global batch,
 trainable scope and validation hashes are saved in each stage's `config.json`;
 compare these along with the complete recipe before reporting results.
 

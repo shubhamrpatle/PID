@@ -183,7 +183,7 @@ def fake_python(tmp_path):
 
 
 @pytest.mark.parametrize("gpus", [1, 2, 4, 8])
-@pytest.mark.parametrize("mode", ["lora", "full"])
+@pytest.mark.parametrize("mode", ["full"])
 def test_launchers_quote_paths_and_never_call_old_scripts(tmp_path, gpus, mode):
     env = fake_python(tmp_path)
     result = subprocess.run(
@@ -205,7 +205,7 @@ def test_launchers_quote_paths_and_never_call_old_scripts(tmp_path, gpus, mode):
 def test_failed_stage1_never_launches_stage2(tmp_path):
     env = dict(fake_python(tmp_path), FAKE_STATUS="1")
     result = subprocess.run(
-        ["bash", str(ROOT / "train_lora.sh"), "2", "both"], env=env, capture_output=True
+        ["bash", str(ROOT / "train_full.sh"), "2", "both"], env=env, capture_output=True
     )
     assert result.returncode == 1
     assert len(Path(env["COMMAND_LOG"]).read_text().splitlines()) == 1

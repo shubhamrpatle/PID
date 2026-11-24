@@ -39,7 +39,7 @@ Localization in Earth observation is challenging because aerial scenes are large
 | --- | --- |
 | Install the environment | [Installation guide](INSTALL.md) |
 | Download LocateAnything-3B, the images and the training records | [Training guide, step 2](docs/TRAINING.md#2-download-the-model-and-data) |
-| Train PID and the direct-box baselines (LoRA or full fine-tuning, 1–8 GPUs, SLURM) | [Training guide](docs/TRAINING.md), [`train_full.sh`](train_full.sh), [`train_lora.sh`](train_lora.sh), [`cluster.slurm`](cluster.slurm) |
+| Train PID and the direct-box baselines (full fine-tuning, 1–8 GPUs, SLURM) | [Training guide](docs/TRAINING.md), [`train_full.sh`](train_full.sh), [`cluster.slurm`](cluster.slurm) |
 | Generate predictions from a trained checkpoint | [Evaluation guide](docs/EVALUATION.md) and [`evaluate.sh`](evaluate.sh) |
 | Score detection, grounding, pointing and efficiency under the paper's protocol | [`paper_evaluation/`](paper_evaluation/README.md) |
 | Data hashes, training settings and the checks that were run | [Reproducibility notes](docs/REPRODUCIBILITY.md) and [`VERIFICATION.md`](VERIFICATION.md) |

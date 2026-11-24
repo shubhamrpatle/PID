@@ -120,8 +120,7 @@ After installing that environment, run from the cloned `RefWave/` directory:
 ```bash
 export WORK_ROOT=/scratch/$USER/refwave-assets
 bash download.sh
-bash train_lora.sh 8 both
-# Or full-parameter training: bash train_full.sh 8 both
+bash train_full.sh 8 both
 ```
 
 The downloader places records in `$WORK_ROOT/dataset/refwave_v1/`, extracts
@@ -141,8 +140,7 @@ This records-only update does not download model weights or image archives.
 use `download.sh` instead. Image filenames in the episodes are relative to
 `DATA_ROOT`, not to `refwave_v1/`.
 
-LoRA defaults to four episodes/GPU with accumulation one. Full fine-tuning
-defaults to one episode/GPU with accumulation four. Both therefore have the
+Full fine-tuning defaults to one episode/GPU with accumulation four, giving the
 following scheduled update counts for one pass (1-8 GPUs on one node):
 
 | GPUs | Global episode batch | Stage 1 updates | Stage 2 updates |

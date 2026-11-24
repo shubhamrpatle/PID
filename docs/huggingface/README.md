@@ -42,8 +42,7 @@ run from the `RefWave/` directory:
 ```bash
 export WORK_ROOT=/scratch/$USER/refwave-assets
 bash download.sh
-bash train_lora.sh 8 both
-# Alternatively, full-parameter training: bash train_full.sh 8 both
+bash train_full.sh 8 both
 ```
 
 Use only GPUs allocated to your job. The launcher accepts 1-8 GPUs on one node.

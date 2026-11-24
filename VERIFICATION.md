@@ -1,5 +1,27 @@
 # Verification Scope
 
+## 2026-11-24: Full fine-tuning only
+
+All models in the paper (PID and both direct-box baselines) were trained with
+full fine-tuning, so the release now exposes only that setting:
+
+- `train_lora.sh` was removed. `train.sh` and `cluster.slurm` default to full
+  fine-tuning, and `train.sh` exits before creating a run if `TUNING` is set to
+  anything other than `full`. Its defaults (one episode per GPU, four
+  accumulation steps, Qwen learning rate 2e-6 / 1e-6, head 1e-6 / 5e-7, MoonViT
+  1e-6, projector 1e-5) match the paper's training table. `cluster.slurm` now
+  requests 256 GiB of host memory.
+- `src/refwave/` and `paper_evaluation/` are unchanged, so the frozen source hashes
+  still hold. The library keeps its internal `tuning` option because saved
+  checkpoints record that field and resuming compares it; no launcher selects
+  anything but `full`.
+- Launcher and trainer tests now use full fine-tuning; new tests check the
+  full-tuning defaults and that `TUNING=lora` is rejected. Result on CPU, with
+  CUDA hidden: **251 passed, 7 skipped** (optional real-weight, upstream-source and
+  GPU checks). Every shell launcher passes `bash -n`.
+
+The entries below are the original release checks, kept as run.
+
 Checked on 2026-09-08. These are developer checks, not steps that a cluster user
 must run. No user-facing launcher invokes pytest, an audit, a manifest scan or a
 training smoke test.

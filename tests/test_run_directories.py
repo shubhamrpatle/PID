@@ -9,7 +9,7 @@ from test_simple_release import ROOT, fake_python
 
 def launch(env, gpus=4, stage="stage1", tag=None):
     return subprocess.run(
-        ["bash", str(ROOT / "train_lora.sh"), str(gpus), stage,
+        ["bash", str(ROOT / "train_full.sh"), str(gpus), stage,
          *([tag] if tag is not None else [])],
         env=env, capture_output=True, text=True, timeout=30,
     )
@@ -39,7 +39,7 @@ def test_fresh_runs_create_distinct_directories_even_with_identical_timestamp(tm
         run = output.parent
         assert run.parent == Path(env["WORK_ROOT"]) / "runs"
         suffix = f"_{tag}" if tag else ""
-        assert run.name.startswith(f"refwave_lora_{gpus}gpu_s1e2_s2e3_stage1{suffix}_20260908T120000Z_")
+        assert run.name.startswith(f"refwave_full_{gpus}gpu_s1e2_s2e3_stage1{suffix}_20260908T120000Z_")
         log = (run / "console.log").read_text()
         assert f"RUN_ROOT={run}" in log
         assert "Resume with the same settings:" in log
@@ -85,7 +85,7 @@ def test_both_stages_share_one_unique_directory_and_select_best(tmp_path, tag):
     assert result.returncode == 0, result.stderr + result.stdout
     first, second = commands(env)
     run = Path(first[first.index("--output") + 1]).parent
-    assert run.name.startswith("refwave_lora_4gpu_s1e2_s2e3_both_")
+    assert run.name.startswith("refwave_full_4gpu_s1e2_s2e3_both_")
     if tag:
         assert f"_both_{tag}_" in run.name
     assert second[second.index("--output") + 1] == str(run / "stage2")
@@ -122,13 +122,12 @@ def test_stage2_continuation_creates_new_run_without_stage1(tmp_path, tag):
     assert "--init-checkpoint" not in command
     assert Path(command[command.index("--output") + 1]).parent != parent.parent.parent
     assert Path(command[command.index("--output") + 1]).parent.name.startswith(
-        "refwave_lora_4gpu_stage2_extrae3_" + (f"{tag}_" if tag else "")
+        "refwave_full_4gpu_stage2_extrae3_" + (f"{tag}_" if tag else "")
     )
 
 
 @pytest.mark.parametrize("method,tuning", [
-    ("refwave", "lora"), ("refwave", "full"), ("standard", "lora"),
-    ("standard", "full"), ("class_isolated", "lora"), ("class_isolated", "full"),
+    ("refwave", "full"), ("standard", "full"), ("class_isolated", "full"),
 ])
 @pytest.mark.parametrize("tag", [None, "ft_2", "run-2.v1", "a" * 64])
 def test_run_name_identifies_method_tuning_gpus_and_epochs(tmp_path, method, tuning, tag):
@@ -190,3 +189,31 @@ def test_failed_training_stays_failed_with_console_logging(tmp_path):
     output = commands(env)[0]
     run = Path(output[output.index("--output") + 1]).parent
     assert (run / "console.log").is_file()
+
+
+@pytest.mark.parametrize("launcher", ["train.sh", "train_full.sh"])
+def test_launchers_default_to_full_fine_tuning(tmp_path, launcher):
+    env = fake_python(tmp_path)
+    result = subprocess.run(
+        ["bash", str(ROOT / launcher), "2", "stage1"],
+        env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 0, result.stderr + result.stdout
+    command, = commands(env)
+    assert command[command.index("--tuning") + 1] == "full"
+    assert command[command.index("--batch-size") + 1] == "1"
+    assert command[command.index("--accumulation") + 1] == "4"
+    assert command[command.index("--learning-rate") + 1] == "2e-6"
+    assert "--lora-rank" not in command
+
+
+def test_lora_tuning_is_rejected_before_any_run(tmp_path):
+    env = dict(fake_python(tmp_path), TUNING="lora")
+    result = subprocess.run(
+        ["bash", str(ROOT / "train.sh"), "2", "stage1"],
+        env=env, capture_output=True, text=True, timeout=30,
+    )
+    assert result.returncode == 2
+    assert "Only full fine-tuning" in result.stderr
+    assert not Path(env["COMMAND_LOG"]).exists()
+    assert not (Path(env["WORK_ROOT"]) / "runs").exists()

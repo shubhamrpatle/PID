@@ -30,11 +30,10 @@ From the `RefWave/` code checkout, with the configured environment active:
 
 ```bash
 unset RUN_ROOT CONTINUE_FROM
-WANDB_MODE=online bash train_lora.sh 8 both xview_corrected
+WANDB_MODE=online bash train_full.sh 8 both xview_corrected
 ```
 
-Use `train_full.sh` for full FT or `METHOD=standard` for the matched direct-box
-control. Choose one job for the allocated GPUs, not all simultaneously.
+Use `METHOD=standard` for the matched direct-box control. Choose one job for the allocated GPUs, not all simultaneously.
 Use 1-8 allocated GPUs. Both training methods use the same corrected records.
 Validation inference needs the explicit `EVAL_RECORDS` setting above; benchmark
 evaluation should explicitly select the intended untouched benchmark instead.

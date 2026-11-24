@@ -36,7 +36,7 @@ def tracking(monkeypatch):
     return runs
 
 
-@pytest.mark.parametrize("method,tuning", [("refwave", "lora"), ("refwave", "full"), ("standard", "lora")])
+@pytest.mark.parametrize("method,tuning", [("refwave", "full"), ("standard", "full"), ("class_isolated", "full")])
 def test_wandb_names_separate_fresh_runs_and_group_their_stages(tiny_trainer, tracking, method, tuning):
     args, _ = tiny_trainer
     args.wandb_mode = "online"

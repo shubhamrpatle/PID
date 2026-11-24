@@ -145,7 +145,7 @@ def tiny_trainer(tmp_path, monkeypatch):
     records.write_text("{}\n{}\n")
     args = SimpleNamespace(
         seed=1, model=tmp_path / "model", image_token_limit=6000,
-        tuning="lora", lora_rank=32, method="refwave", stage="stage1",
+        tuning="full", lora_rank=32, method="refwave", stage="stage1",
         data_root=tmp_path, train_data=records, validation_data=records,
         max_sequence=32768, batch_size=1, accumulation=1, batch_tokens=8192,
         learning_rate=2e-5, head_lr=1e-6, vision_lr=1e-6, projector_lr=1e-5,
@@ -220,7 +220,7 @@ def test_best_pointer_is_recovered_after_interrupted_checkpoint_publication(tiny
     assert (args.output / "best.pt").resolve() == (args.output / "last.pt").resolve()
 
 
-@pytest.mark.parametrize("method,tuning", [("refwave", "lora"), ("refwave", "full"), ("standard", "lora")])
+@pytest.mark.parametrize("method,tuning", [("refwave", "full"), ("standard", "full"), ("class_isolated", "full")])
 @pytest.mark.parametrize("epochs", [1, 2])
 def test_new_run_tolerates_config_published_during_hashing(tiny_trainer, monkeypatch, method, tuning, epochs):
     args, state = tiny_trainer

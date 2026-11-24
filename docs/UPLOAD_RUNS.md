@@ -64,14 +64,13 @@ The contents of `runs/` become the repository root:
 
 ```text
 Hugging Face: CaseStudyRef/RefWave-Cluster-Runs
-  refwave_lora_8gpu_<timestamp>_<id>/
+  refwave_full_8gpu_<timestamp>_<id>/
     console.log
     stage1/checkpoint-....pt
     stage1/best.pt
     stage1/last.pt
     stage2/...
-  refwave_full_8gpu_<timestamp>_<id>/...
-  standard_lora_4gpu_<timestamp>_<id>/...
+  standard_full_8gpu_<timestamp>_<id>/...
 ```
 
 File symlinks such as `best.pt` and `last.pt` are uploaded as their target file

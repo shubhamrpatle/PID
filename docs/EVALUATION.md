@@ -22,13 +22,8 @@ METHOD=standard bash evaluate.sh 4 "/absolute/path/to/the/standard/run/stage2/be
 bash evaluate.sh 4 baseline
 ```
 
-Use the corresponding `refwave_full_...` run for a full fine-tuned checkpoint. The loader restores
-the full trained state, including the output head; it does not use a LoRA-only
-loader for a full checkpoint.
-
-```bash
-bash evaluate.sh 4 "/absolute/path/to/the/full/run/stage2/best.pt"
-```
+The loader restores the full trained state of the checkpoint, including the
+output head.
 
 For independent sequential decoding rather than class/address waves:
 

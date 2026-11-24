@@ -65,16 +65,16 @@ for historical context, not as the current download recipe. The launcher's
 unset `RECORDS_DIR` default remains `refwave_v1` for compatibility with old runs;
 use the explicit export above for new corrected-data training.
 
-Reserve roughly 250 GiB for LoRA or 450 GiB for full fine-tuning, including
-archives, extracted images, environment, model and checkpoints. Storage estimates
-are not GPU-memory estimates. Full fine-tuning also needs substantially more
-host RAM for consolidated checkpoints; 256 GiB is a prudent starting request.
+Reserve roughly 450 GiB of storage, including archives, extracted images,
+environment, model and checkpoints. Storage estimates are not GPU-memory
+estimates. Full fine-tuning also needs substantial host RAM for consolidated
+checkpoints; 256 GiB is a prudent starting request.
 
 ```text
 RefWave/
   requirements.txt
-  train_lora.sh              rank-32 Qwen LoRA + complete LM head
-  train_full.sh              full MoonViT + projector + Qwen + head
+  train_full.sh              full fine-tuning: MoonViT + projector + Qwen + head
+  train.sh                   shared launcher used by train_full.sh
   evaluate.sh                generated HBB evaluation, 1-8 GPU shards
   export.sh                  optional portable model export
   cluster.slurm              one-node SLURM example
@@ -87,51 +87,45 @@ refwave-assets/
     images/{train,validation}/...
     archives/...
   runs/
-    refwave_lora_8gpu_s1e2_s2e2_both_<UTC-timestamp>_<unique>/
+    refwave_full_8gpu_s1e2_s2e2_both_<UTC-timestamp>_<unique>/
       console.log
       stage1/
       stage2/
-    refwave_full_8gpu_s1e2_s2e2_both_<UTC-timestamp>_<unique>/...
-    standard_lora_4gpu_s1e2_s2e2_both_<UTC-timestamp>_<unique>/...
+    standard_full_8gpu_s1e2_s2e2_both_<UTC-timestamp>_<unique>/...
 ```
 
 ## 3. Train on an Allocated GPU Node
 
-Choose one command. `8` can be any allocated GPU count from **1 to 8**.
-These scripts support **one compute node**, not multi-node training.
-They respect `CUDA_VISIBLE_DEVICES`; they never reserve GPUs or terminate jobs.
+All models in the paper, PID and both direct-box baselines, are trained with
+full fine-tuning of every model component. `8` can be any allocated GPU count
+from **1 to 8**; the paper used eight. These scripts support **one compute
+node**, not multi-node training. They respect `CUDA_VISIBLE_DEVICES`; they never
+reserve GPUs or terminate jobs.
 
 ```bash
 unset RUN_ROOT  # Fresh run; do not reuse an earlier exported output path.
-bash train_lora.sh 8 both
-```
-
-Or full-parameter fine-tuning:
-
-```bash
 bash train_full.sh 8 both
 ```
 
 Or the standard direct-box control on the same source episodes:
 
 ```bash
-METHOD=standard bash train_lora.sh 8 both
-# Or: METHOD=standard bash train_full.sh 8 both
+METHOD=standard bash train_full.sh 8 both
 ```
 
 Do not start all commands simultaneously on the same allocated GPUs.
 Set the epoch count independently for each stage (both default to `1`):
 
 ```bash
-STAGE1_EPOCHS=2 STAGE2_EPOCHS=3 WANDB_MODE=online bash train_lora.sh 8 both
+STAGE1_EPOCHS=2 STAGE2_EPOCHS=3 WANDB_MODE=online bash train_full.sh 8 both
 ```
 
 This runs two passes over Stage-1 data, then initializes Stage 2 from
 `stage1/best.pt` and runs three passes over Stage-2 data. The best checkpoint is
 selected across all validation evaluations in the stage, not just the final
 epoch. Stage 2 starts only after Stage 1 completes all requested epochs, with a
-fresh optimizer and scheduler. The same epoch settings work with `train_full.sh`
-and `METHOD=standard`. You can also change the defaults near the top of `train.sh`.
+fresh optimizer and scheduler. The same epoch settings work with
+`METHOD=standard`. The paper's setting is `STAGE1_EPOCHS=2 STAGE2_EPOCHS=2`.
 
 With `RUN_ROOT` unset, each invocation creates a new directory under
 `$WORK_ROOT/runs/`, named by method, tuning mode, GPU count, stage epoch counts,
@@ -140,13 +134,13 @@ requested stages, UTC timestamp and a unique suffix. For example,
 on four GPUs, with two epochs in each stage. `s1e` and `s2e` are configured epoch
 counts; the next field (`both`, `stage1` or `stage2`) identifies which stages this
 invocation runs. Extra Stage-2 training instead uses names such as
-`refwave_lora_4gpu_stage2_extrae1_<timestamp>_<unique>`.
+`refwave_full_4gpu_stage2_extrae1_<timestamp>_<unique>`.
 Repeated runs with identical settings also get separate folders. An explicit
 `RUN_ROOT` is never renamed, so existing checkpoints and W&B identities remain usable.
 The launcher prints `RUN_ROOT` and the console-log path before training starts.
 Both stages of a `both` invocation stay inside that one run directory.
 
-Optionally add your own label as the third argument to either training wrapper:
+Optionally add your own label as the third argument:
 
 ```bash
 RUN_ROOT= CONTINUE_FROM= METHOD=standard \
@@ -168,13 +162,13 @@ best/last checkpoints. Resuming appends console output instead of replacing it.
 To resume, explicitly use the run path printed by the earlier launch:
 
 ```bash
-RUN_ROOT="/absolute/path/to/existing/run" bash train_lora.sh 8 both
+RUN_ROOT="/absolute/path/to/existing/run" bash train_full.sh 8 both
 ```
 
-Use `train_full.sh` for a full-parameter run and retain `METHOD=standard` for the
-direct-box control. Use `stage1` or `stage2` instead of `both` to run one stage.
+Retain `METHOD=standard` for the direct-box control. Use `stage1` or `stage2`
+instead of `both` to run one stage.
 Starting `stage2` alone requires an explicit `RUN_ROOT` containing completed
-Stage-1 **best** weights of the same method/tuning mode; its optimizer starts fresh.
+Stage-1 **best** weights of the same method; its optimizer starts fresh.
 An already-started Stage 2 resumes its own `stage2/last.pt`, preserving its original
 parent even if the old launcher originally used Stage-1 last weights.
 Keep epoch counts, world size, source records, seed, batch and optimization settings unchanged
@@ -198,19 +192,17 @@ Use its best weights to initialize a **new Stage-2 continuation run**:
 ```bash
 unset RUN_ROOT
 CONTINUE_FROM="/absolute/path/to/previous/run/stage2/best.pt" \
-STAGE2_EPOCHS=1 STAGE2_LR=5e-6 STAGE2_HEAD_LR=2.5e-7 \
-BATCH_SIZE=8 GRAD_ACCUM=1 BATCH_TOKENS=16384 \
-WANDB_MODE=online bash train_lora.sh 4 stage2
+STAGE2_EPOCHS=1 STAGE2_LR=5e-7 STAGE2_HEAD_LR=2.5e-7 \
+WANDB_MODE=online bash train_full.sh 8 stage2
 ```
 
-This example matches the previous four-GPU LoRA batch settings and uses lower
-trial learning rates. Set `STAGE2_EPOCHS` to the number of **additional passes in
+This example uses half of the Stage-2 learning rates as a trial setting. Set `STAGE2_EPOCHS` to the number of **additional passes in
 this new run**, not the combined epoch count across old and new runs. It skips
 Stage 1 entirely, loads the Stage-2 model weights, resets optimizer/scheduler and
 record progress, and saves to a new folder and W&B run. The old checkpoints are
 untouched. Keep `done.json` beside the source checkpoint when transferring an
-earlier best checkpoint from a completed stage. For Standard LoRA, also set
-`METHOD=standard` and use that method's own Stage-2 checkpoint.
+earlier best checkpoint from a completed stage. For the standard control, also
+set `METHOD=standard` and use that method's own Stage-2 checkpoint.
 
 The new run has its own best/last checkpoint selection; compare its validation
 performance with the preserved parent before choosing a final model. To resume
@@ -218,18 +210,20 @@ an interrupted continuation, use its printed `RUN_ROOT`, the same epoch/batch/LR
 settings and `stage2`; `CONTINUE_FROM` can be omitted because `last.pt` preserves
 the original initialization identity.
 
-| Setting | LoRA | Full fine-tuning |
-|---|---|---|
-| Trainable | Rank-32 Qwen adapters + complete head | All model parameters |
-| Physical episodes/GPU | 4 | 1 |
-| Gradient accumulation | 1 | 4 |
-| Global episodes/update on 8 GPUs | 32 | 32 |
-| Stage-1 Qwen / head LR | 2e-5 / 1e-6 | 2e-6 / 1e-6 |
-| Stage-2 Qwen / head LR | 1e-5 / 5e-7 | 1e-6 / 5e-7 |
-| Vision / projector LR | Frozen | 1e-6 / 1e-5, both stages |
-| Optimizer | AdamW | AdamW, PyTorch ZeRO-1 state sharding on >1 GPU |
+The launcher defaults are the paper's training configuration:
 
-Both use BF16 forwards, FP32 trainable parameters/optimizer state, gradient
+| Setting | Full fine-tuning |
+|---|---|
+| Trainable | All model parameters: MoonViT, projector, Qwen and output head |
+| Physical episodes/GPU | 1 |
+| Gradient accumulation | 4 |
+| Global episodes/update on 8 GPUs | 32 |
+| Stage-1 Qwen / head LR | 2e-6 / 1e-6 |
+| Stage-2 Qwen / head LR | 1e-6 / 5e-7 |
+| Vision / projector LR | 1e-6 / 1e-5, both stages |
+| Optimizer | AdamW, PyTorch ZeRO-1 state sharding on >1 GPU |
+
+Training uses BF16 forwards, FP32 trainable parameters/optimizer state, gradient
 checkpointing, 6,000 pre-merge image patches and a 32,768-token wave limit.
 The normal 2x2 visual merge remains enabled; 6,000 is **not** the Qwen visual-token
 count. Wave grouping targets 8,192 padded tokens; a larger indivisible wave runs
@@ -238,11 +232,7 @@ There is no silent target truncation and no 180-box cap.
 
 `STAGE1_EPOCHS`, `STAGE2_EPOCHS`, `BATCH_SIZE`, `GRAD_ACCUM`, `BATCH_TOKENS`,
 `WORKERS`, learning rates and `RUN_ROOT`
-are explicit environment overrides. For a new memory-constrained LoRA run:
-
-```bash
-RUN_ROOT= BATCH_SIZE=1 GRAD_ACCUM=4 bash train_lora.sh 8 both
-```
+are explicit environment overrides. Changing them departs from the paper's setting.
 
 Full training keeps model parameters and optimizer states on GPU, without CPU
 optimizer offload. No automatic OOM retry changes the recipe, drops targets or
@@ -253,8 +243,8 @@ restarts training with different settings.
 Full training uses PyTorch's built-in fused SDPA for MoonViT. Packed images are
 processed separately with four-dimensional attention inputs, preserving image
 isolation without constructing the original quadratic mask. Qwen's branch and
-PBD attention masks are unchanged. LoRA and standalone evaluation retain their
-existing attention path.
+PBD attention masks are unchanged. Standalone evaluation retains its existing
+attention path.
 
 This changes only the vision attention implementation: FP32 trainable weights,
 GPU AdamW/ZeRO-1 states, BF16 forwards, existing gradient checkpointing, data,
@@ -275,7 +265,7 @@ full-run configuration now records
 `trainable.vision_attention = refwave_fused_per_image_sdpa`, so old full-run
 configurations are not accepted for exact resume with this code. Checkpoint
 tensor and optimizer formats are unchanged. New runs can resume as documented
-above, using their original `RUN_ROOT`. LoRA run configurations are unchanged.
+above, using their original `RUN_ROOT`.
 
 The previous GPU-only implementation failed during MoonViT backward on a
 4 x 80-GB allocation at batch one. CPU output/gradient equivalence checks do not
@@ -321,7 +311,7 @@ Validation loss and saving run every 300 optimizer updates and at each epoch end
 An ordinary interrupt requests an aligned checkpoint after the current update;
 SIGKILL/power loss can lose work since the previous save. Full fine-tuning retains
 visual gradients from all waves before one vision backward, with checkpoint
-recomputation; it is not the frozen-vision LoRA code with a changed flag alone.
+recomputation.
 
 Resume repairs only an unfinished final entry in a training log or prediction
 shard, with a warning; corruption in a completed entry is an error. If an
@@ -340,16 +330,16 @@ source scripts/common.sh
 
 # A fresh experiment with a new output folder and new W&B runs.
 unset RUN_ROOT
-WANDB_MODE=online bash train_lora.sh 8 both
+WANDB_MODE=online bash train_full.sh 8 both
 ```
 
 Setup and training use the same Python selected by `scripts/common.sh`, including
 an active Conda environment. No `.venv/` is required for Conda users.
-Replace `8` with your allocated GPU count, or use `train_full.sh` for full tuning.
+Replace `8` with your allocated GPU count.
 
 Each fresh experiment has its own W&B group, named after the unique `RUN_ROOT`
 folder. Stage 1 and Stage 2 appear as **two separate runs within that group**, for
-example `refwave_lora_8gpu_s1e2_s2e2_both_<timestamp>_<unique>_stage1` and `..._stage2`.
+example `refwave_full_8gpu_s1e2_s2e2_both_<timestamp>_<unique>_stage1` and `..._stage2`.
 Only GPU rank 0 logs, so using eight GPUs does not create eight W&B runs per stage.
 To resume, set the original `RUN_ROOT` and keep the same `WANDB_PROJECT` and W&B
 account/team; the stage's run ID is reused. Do **not** unset `RUN_ROOT` when resuming.
@@ -382,12 +372,8 @@ sbatch --partition=YOUR_PARTITION --account=YOUR_ACCOUNT cluster.slurm
 ```
 
 Change account/partition/GPU resource syntax to your site's rules. The supplied
-example requests one node, 8 GPUs, 16 CPU cores, 128 GiB RAM and 48 hours; its time
-limit is **not** a training ETA. For full fine-tuning, request more host RAM:
-
-```bash
-sbatch --mem=256G --export=ALL,TUNING=full cluster.slurm
-```
+example requests one node, 8 GPUs, 16 CPU cores, 256 GiB RAM and 48 hours; its time
+limit is **not** a training ETA.
 
 For 2 GPUs: `sbatch --gres=gpu:2 --export=ALL,GPUS=2 cluster.slurm` plus your
 account/partition arguments. For Conda, export `PYTHON_BIN` before submission.
@@ -401,7 +387,6 @@ export the existing run path before submitting a resume or Stage-2-only job.
 
 For standard multi-category direct boxes and class-isolated direct boxes on the
 same records, see [Direct-box ablations](DIRECT_BOX_ABLATIONS.md).
-Select `METHOD=standard` or `METHOD=class_isolated` with `train_lora.sh` or
-`train_full.sh`. For a matched comparison against RefWave, use the same wrapper,
-record files, epochs, batch settings and validation-selection policy for both.
+Select `METHOD=standard` or `METHOD=class_isolated` with `train_full.sh`.
+For a matched comparison against RefWave, use the same record files, epochs, batch settings and validation-selection policy for both.
 The existing RefWave default is unchanged; no new dataset download is required.

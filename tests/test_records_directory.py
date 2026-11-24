@@ -8,7 +8,7 @@ import pytest
 from test_simple_release import ROOT, fake_python
 
 
-@pytest.mark.parametrize('tuning', ['lora', 'full'])
+@pytest.mark.parametrize('tuning', ['full'])
 @pytest.mark.parametrize('method', ['standard', 'refwave', 'class_isolated'])
 def test_select_new_records_without_changing_image_root(tmp_path, tuning, method):
     env = fake_python(tmp_path)
