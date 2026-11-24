@@ -1,0 +1,53 @@
+/* PID-specific additions on top of the shared project-page stylesheet (styles.css). */
+
+.academic-theme .affiliation-logo-ibm {
+  height: 40px;
+}
+
+@media (max-width: 720px) {
+  .academic-theme .affiliation-logo-ibm {
+    height: 32px;
+  }
+}
+
+/* Still images in place of the template's videos. */
+.academic-theme .hero-image-shell,
+.academic-theme .figure-image-shell {
+  overflow: hidden;
+  padding: 14px;
+  background: #fff;
+  border-radius: 14px 14px 0 0;
+}
+
+.academic-theme .hero-image-shell img,
+.academic-theme .figure-image-shell img,
+.academic-theme .speed-image-shell img {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+
+.academic-theme .speed-image-shell {
+  overflow: hidden;
+  padding: 14px;
+  background: #fff;
+}
+
+.academic-theme .button[aria-disabled="true"] {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.academic-theme .paper-table-image-wrap img.table-narrow {
+  width: min(100%, 720px);
+  min-width: 0;
+  margin-inline: auto;
+}
+
+/* Let the longer PID highlight labels wrap on narrow screens. */
+@media (max-width: 720px) {
+  .academic-theme .contribution-stat .accent-label {
+    white-space: normal;
+    text-align: center;
+  }
+}
