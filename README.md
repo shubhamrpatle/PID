@@ -11,6 +11,7 @@
 <sup>1</sup> Mohamed bin Zayed University of Artificial Intelligence · <sup>2</sup> International Business Machines (IBM)
 
 [![Paper](https://img.shields.io/badge/📄_Paper-arXiv_(coming_soon)-blue)](#-citation)
+[![Project Page](https://img.shields.io/badge/🌐_Project-Page-blue)](https://shubhamrpatle.github.io/PID/)
 [![Dataset](https://img.shields.io/badge/🤗_Dataset-Hugging_Face-yellow)](https://huggingface.co/datasets/shubhampatle/Pixel-PIVR-Magnified-v2/tree/591d53da15234597941394f2848740151209434b/refwave_v6_xview_corrected_20260914)
 [![License](https://img.shields.io/badge/License-Apache_2.0-green)](LICENSE)
 
