@@ -39,8 +39,8 @@
 }
 
 .academic-theme .paper-table-image-wrap img.table-narrow {
-  width: min(100%, 720px);
-  min-width: 0;
+  width: min(100%, 620px);
+  min-width: 480px;
   margin-inline: auto;
 }
 
@@ -50,4 +50,77 @@
     white-space: normal;
     text-align: center;
   }
+}
+
+/* Latency section: chart next to the key numbers. */
+.academic-theme .latency-split {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 36px;
+  align-items: center;
+}
+
+.academic-theme .latency-chart {
+  margin: 0;
+}
+
+.academic-theme .latency-copy > p {
+  margin: 0 0 22px;
+  color: #4b5b6e;
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+.academic-theme .latency-stats {
+  display: grid;
+  gap: 12px;
+}
+
+.academic-theme .latency-stat {
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  background: #fff;
+  border: 1px solid #dbe3ef;
+  border-left: 4px solid #1f8a6a;
+  border-radius: 10px;
+  box-shadow: 0 8px 22px rgba(31, 65, 105, 0.06);
+}
+
+.academic-theme .latency-value {
+  color: #1f8a6a;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.academic-theme .latency-label {
+  color: #5c6c80;
+  font-size: 14px;
+}
+
+.academic-theme .latency-copy .latency-note {
+  margin: 14px 0 0;
+  color: #7b8899;
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .academic-theme .latency-split {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}
+
+/* Tables with few columns are shown narrower so their text matches the wide tables. */
+.academic-theme .paper-table-image-wrap img.table-medium {
+  width: min(100%, 880px);
+  min-width: 640px;
+  margin-inline: auto;
+}
+
+/* Landscape example slides. */
+.academic-theme .speed-image-shell {
+  background: #eef1e4;
 }

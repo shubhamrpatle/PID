@@ -29,6 +29,7 @@
   <nav class="side-nav" aria-label="Page sections" data-nav>
     <a class="is-active" href="#teaser">Teaser</a>
     <a href="#highlights">Highlights</a>
+    <a href="#speed">Speed</a>
     <a href="#method">Method</a>
     <a href="#explore">Visualize</a>
     <a href="#results">Results</a>
@@ -77,9 +78,9 @@
 
         <figure class="hero-media reveal" data-delay="1">
           <div class="hero-image-shell">
-            <img src="assets/figures/teaser.png" width="1600" height="451" alt="(A) Direct box localization decodes boxes one after another. (B) PID predicts one point address per instance and then all boxes in one parallel pass. (C) Latency versus the number of correct boxes on DOTAv2.">
+            <img src="assets/figures/teaser_ab.png" width="2000" height="849" alt="Direct box localization decodes boxes one after another, whereas PID predicts one point address per instance and then all boxes in one parallel pass">
           </div>
-          <figcaption><strong>Parallel Instance Decoding (PID).</strong> (A) Direct box localization decodes boxes sequentially, even when coordinates within a box are predicted in parallel. (B) PID first predicts one point address per object instance for each textual reference, and then predicts the boxes of all addresses in a single parallel pass using instance-isolated attention. (C) Complete-response latency on DOTAv2 versus the number of correctly predicted boxes per image: the latency of direct-box models grows steeply with the number of objects, whereas PID's latency grows much more slowly.</figcaption>
+          <figcaption><strong>Direct box localization vs. PID.</strong> Direct-box models write boxes one after another; PID first points at every instance, then predicts all boxes at once.</figcaption>
         </figure>
       </div>
     </section>
@@ -159,6 +160,45 @@
       </div>
     </section>
 
+    <section class="section speed-section" id="speed">
+      <div class="section-shell">
+        <div class="section-intro reveal">
+          <h2>Latency Stays Low in Dense Scenes</h2>
+        </div>
+
+        <div class="latency-split reveal">
+          <figure class="paper-table-card latency-chart">
+            <div class="figure-image-shell">
+              <img src="assets/figures/latency.png" width="1200" height="855" alt="Complete-response latency versus the number of correct boxes per DOTAv2 image for Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
+            </div>
+            <figcaption>
+              <span class="paper-table-number">DOTAv2</span>
+              <p>Complete-response latency per image against the number of correctly predicted boxes.</p>
+            </figcaption>
+          </figure>
+
+          <div class="latency-copy">
+            <p>Direct-box models write one box after another, so every additional object adds decoding steps. PID predicts all boxes of an image in one parallel pass, and its latency grows much more slowly as the number of objects increases.</p>
+            <div class="latency-stats">
+              <div class="latency-stat">
+                <span class="latency-value">3.93&nbsp;s → 2.22&nbsp;s</span>
+                <span class="latency-label">Time per image on DOTAv2</span>
+              </div>
+              <div class="latency-stat">
+                <span class="latency-value">0.99&nbsp;s → 0.77&nbsp;s</span>
+                <span class="latency-label">Time per image on DIOR</span>
+              </div>
+              <div class="latency-stat">
+                <span class="latency-value">3.27 → 8.33</span>
+                <span class="latency-label">Correct boxes per second on DOTAv2</span>
+              </div>
+            </div>
+            <p class="latency-note">Compared with LocateAnything-3B fine-tuned on the same data (Table 4).</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <section class="section main-results-section" id="method">
       <div class="section-shell">
         <div class="section-intro reveal">
@@ -184,7 +224,7 @@
         </div>
 
         <figure class="speed-comparison-media reveal">
-          <p class="speed-comparison-description">Compare ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned on the same data, and <span style="color: #44CF7E;">PID (ours)</span> on detection, grounding and pointing. Use the arrows to switch between tasks.</p>
+          <p class="speed-comparison-description">Compare ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned on the same data, and <span style="color: #44CF7E;">PID (ours)</span> on detection, grounding and pointing. Use the arrows to browse nine examples.</p>
           <div class="speed-carousel" data-speed-carousel tabindex="0" aria-label="Qualitative example carousel">
             <button class="speed-carousel-arrow speed-carousel-prev" type="button" data-speed-prev aria-label="Show previous example">
               <span aria-hidden="true">←</span>
@@ -192,21 +232,57 @@
 
             <div class="speed-carousel-viewport">
               <div class="speed-carousel-track" data-speed-track>
-                <article class="speed-video-card speed-slide" data-speed-slide data-speed-name="Box detection">
+                <article class="speed-video-card speed-slide" data-speed-slide data-speed-name='Detection · DIOR scene 1'>
                   <div class="speed-image-shell">
-                    <img src="assets/figures/qualitative_detection.jpg" width="1600" height="1704" alt="Full-vocabulary detection on DIOR and DOTAv2" loading="lazy" decoding="async">
+                    <img src="assets/examples/detection_1.jpg" width="1600" height="583" alt="Detection · DIOR scene 1: ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
                   </div>
                 </article>
 
-                <article class="speed-video-card speed-slide" data-speed-slide data-speed-name="Grounding" aria-hidden="true">
+                <article class="speed-video-card speed-slide" data-speed-slide data-speed-name='Detection · DIOR scene 2' aria-hidden="true">
                   <div class="speed-image-shell">
-                    <img src="assets/figures/qualitative_grounding.jpg" width="1600" height="1704" alt="Referring-expression grounding on DIOR-RSVG and VRSBench-VG" loading="lazy" decoding="async">
+                    <img src="assets/examples/detection_2.jpg" width="1600" height="583" alt="Detection · DIOR scene 2: ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
                   </div>
                 </article>
 
-                <article class="speed-video-card speed-slide" data-speed-slide data-speed-name="Pointing" aria-hidden="true">
+                <article class="speed-video-card speed-slide" data-speed-slide data-speed-name='Detection · DOTAv2 scene' aria-hidden="true">
                   <div class="speed-image-shell">
-                    <img src="assets/figures/qualitative_pointing.jpg" width="1600" height="1704" alt="Category-conditioned pointing on DIOR" loading="lazy" decoding="async">
+                    <img src="assets/examples/detection_3.jpg" width="1600" height="583" alt="Detection · DOTAv2 scene: ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
+                  </div>
+                </article>
+
+                <article class="speed-video-card speed-slide" data-speed-slide data-speed-name='Grounding · "A chimney in the middle"' aria-hidden="true">
+                  <div class="speed-image-shell">
+                    <img src="assets/examples/grounding_1.jpg" width="1600" height="583" alt="Grounding · A chimney in the middle: ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
+                  </div>
+                </article>
+
+                <article class="speed-video-card speed-slide" data-speed-slide data-speed-name='Grounding · "The second tennis court from above"' aria-hidden="true">
+                  <div class="speed-image-shell">
+                    <img src="assets/examples/grounding_2.jpg" width="1600" height="583" alt="Grounding · The second tennis court from above: ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
+                  </div>
+                </article>
+
+                <article class="speed-video-card speed-slide" data-speed-slide data-speed-name='Grounding · "The ship towards the right edge"' aria-hidden="true">
+                  <div class="speed-image-shell">
+                    <img src="assets/examples/grounding_3.jpg" width="1600" height="583" alt="Grounding · The ship towards the right edge: ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
+                  </div>
+                </article>
+
+                <article class="speed-video-card speed-slide" data-speed-slide data-speed-name='Pointing · tennis courts' aria-hidden="true">
+                  <div class="speed-image-shell">
+                    <img src="assets/examples/pointing_1.jpg" width="1600" height="583" alt="Pointing · tennis courts: ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
+                  </div>
+                </article>
+
+                <article class="speed-video-card speed-slide" data-speed-slide data-speed-name='Pointing · airplanes' aria-hidden="true">
+                  <div class="speed-image-shell">
+                    <img src="assets/examples/pointing_2.jpg" width="1600" height="583" alt="Pointing · airplanes: ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
+                  </div>
+                </article>
+
+                <article class="speed-video-card speed-slide" data-speed-slide data-speed-name='Pointing · storage tanks' aria-hidden="true">
+                  <div class="speed-image-shell">
+                    <img src="assets/examples/pointing_3.jpg" width="1600" height="583" alt="Pointing · storage tanks: ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
                   </div>
                 </article>
               </div>
@@ -216,7 +292,7 @@
               <span aria-hidden="true">→</span>
             </button>
           </div>
-          <figcaption><strong>Detection, grounding and pointing examples</strong> <span data-speed-status></span></figcaption>
+          <figcaption><strong data-speed-status>Detection, grounding and pointing examples</strong></figcaption>
         </figure>
       </div>
     </section>
@@ -235,7 +311,7 @@
 
           <figure class="paper-table-card">
             <div class="paper-table-image-wrap">
-              <img src="assets/tables/detection.png" width="1507" height="793" alt="Detection results on DIOR and DOTAv2 for specialized detectors, autoregressive VLMs and PID" loading="lazy" decoding="async">
+              <img class="table-medium" src="assets/tables/detection.png" width="1507" height="793" alt="Detection results on DIOR and DOTAv2 for specialized detectors, autoregressive VLMs and PID" loading="lazy" decoding="async">
             </div>
             <figcaption>
               <span class="paper-table-number">Table 1</span>
@@ -253,7 +329,7 @@
           <div class="paper-table-stack">
             <figure class="paper-table-card">
               <div class="paper-table-image-wrap">
-                <img src="assets/tables/grounding.png" width="1743" height="662" alt="Referring-expression grounding results on DIOR-RSVG and VRSBench-VG" loading="lazy" decoding="async">
+                <img class="table-medium" src="assets/tables/grounding.png" width="1743" height="662" alt="Referring-expression grounding results on DIOR-RSVG and VRSBench-VG" loading="lazy" decoding="async">
               </div>
               <figcaption>
                 <span class="paper-table-number">Table 2</span>
@@ -282,7 +358,7 @@
           <div class="paper-table-stack">
             <figure class="paper-table-card">
               <div class="paper-table-image-wrap">
-                <img src="assets/tables/efficiency.png" width="1413" height="388" alt="Time per image, boxes per second and correct boxes per second on DIOR and DOTAv2" loading="lazy" decoding="async">
+                <img class="table-medium" src="assets/tables/efficiency.png" width="1413" height="388" alt="Time per image, boxes per second and correct boxes per second on DIOR and DOTAv2" loading="lazy" decoding="async">
               </div>
               <figcaption>
                 <span class="paper-table-number">Table 4</span>
@@ -311,7 +387,7 @@
           <div class="paper-table-stack">
             <figure class="paper-table-card">
               <div class="paper-table-image-wrap">
-                <img src="assets/tables/ablation.png" width="1507" height="738" alt="Ablation of output formulation and address source" loading="lazy" decoding="async">
+                <img class="table-medium" src="assets/tables/ablation.png" width="1507" height="738" alt="Ablation of output formulation and address source" loading="lazy" decoding="async">
               </div>
               <figcaption>
                 <span class="paper-table-number">Table 5</span>
@@ -339,15 +415,37 @@
           <h2>Qualitative Results</h2>
         </div>
 
-        <figure class="paper-table-card reveal">
-          <div class="paper-table-image-wrap">
-            <img src="assets/figures/qualitative.jpg" width="1600" height="1497" alt="Qualitative comparison on detection, grounding and pointing across ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
-          </div>
-          <figcaption>
-            <span class="paper-table-number">Qualitative</span>
-            <p><strong>Detection (top; DOTAv2), grounding (middle; VRSBench-VG) and pointing (bottom; DOTAv2)</strong> for ground truth, Rex-Omni-3B, LA-3B (FT)† and PID. Colors denote detection categories; dashed boxes and dots denote pointing targets and predictions. Labels show counts or grounding IoU.</p>
-          </figcaption>
-        </figure>
+        <div class="paper-table-stack reveal">
+          <figure class="paper-table-card">
+            <div class="paper-table-image-wrap">
+              <img src="assets/examples/main_detection.jpg" width="1600" height="516" alt="Detection example: ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
+            </div>
+            <figcaption>
+              <span class="paper-table-number">Detection</span>
+              <p><strong>Multi-category detection on DOTAv2.</strong> For 66 annotated objects, PID returns 59 boxes, compared with 53 for Rex-Omni-3B and 50 for the fine-tuned baseline.</p>
+            </figcaption>
+          </figure>
+
+          <figure class="paper-table-card">
+            <div class="paper-table-image-wrap">
+              <img src="assets/examples/main_grounding.jpg" width="1600" height="482" alt="Grounding example: ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
+            </div>
+            <figcaption>
+              <span class="paper-table-number">Grounding</span>
+              <p><strong>Referring-expression grounding on VRSBench-VG.</strong> "Second ship from above positioned at the top of the image has blue cover on it." Rex-Omni-3B selects a different ship (IoU 0.09); PID reaches the highest IoU (0.86).</p>
+            </figcaption>
+          </figure>
+
+          <figure class="paper-table-card">
+            <div class="paper-table-image-wrap">
+              <img src="assets/examples/main_pointing.jpg" width="1600" height="481" alt="Pointing example: ground truth, Rex-Omni-3B, LocateAnything-3B fine-tuned and PID" loading="lazy" decoding="async">
+            </div>
+            <figcaption>
+              <span class="paper-table-number">Pointing</span>
+              <p><strong>Pointing on DOTAv2.</strong> For 78 ships, PID places 74 points, compared with 70 for Rex-Omni-3B and 62 for the fine-tuned baseline.</p>
+            </figcaption>
+          </figure>
+        </div>
       </div>
     </section>
 
